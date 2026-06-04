@@ -12,6 +12,7 @@ Sign convention: :meth:`epsilon` returns ε* in the internal ``e^{jωt}`` conven
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 import numpy as np
 
@@ -29,9 +30,9 @@ class DielectricModel(ABC):
     """
 
     #: Ordered names of the free parameters (used by the generic fitter).
-    param_names: tuple[str, ...] = ()
+    param_names: ClassVar[tuple[str, ...]] = ()
 
-    #: Source for the model equation; subclasses set this.
+    #: Source for the model equation; subclasses set this (as a dataclass field).
     provenance: Provenance
 
     @abstractmethod
@@ -78,3 +79,37 @@ class DielectricModel(ABC):
         """σ_eff(f) = -ω·ε₀·Im(ε*) [S/m] (positive for a passive lossy medium)."""
         omega = angular_frequency(frequency_hz)
         return -omega * EPSILON_0 * np.imag(self.epsilon(frequency_hz))
+
+    def __add__(self, other: DielectricModel) -> SumModel:
+        """Compose models by adding their susceptibility contributions (e.g. relaxation + DC σ).
+
+        Only one summand should carry ε∞ (others should contribute 0 at the high-frequency limit),
+        otherwise ε∞ is double-counted.
+        """
+        return SumModel((self, other))
+
+
+class SumModel(DielectricModel):
+    """A sum of model contributions, evaluated as Σ εᵢ(f).
+
+    Used for composition (e.g. ``cole_cole + DCConductivity``); not directly fittable — fit the
+    flat-parameter concrete models (e.g. :class:`MultiPoleRelaxation` with ``sigma_dc``) instead.
+    """
+
+    param_names: ClassVar[tuple[str, ...]] = ()
+
+    def __init__(self, terms: tuple[DielectricModel, ...]):
+        self.terms = terms
+        sources = "; ".join(t.provenance.citation() for t in terms)
+        self.provenance = Provenance(
+            authors="composite",
+            year=0,
+            title="Sum of dielectric contributions",
+            source=sources,
+        )
+
+    def epsilon(self, frequency_hz: FloatArray) -> ComplexArray:
+        total = np.zeros_like(np.asarray(frequency_hz, dtype=np.complex128))
+        for term in self.terms:
+            total = total + term.epsilon(frequency_hz)
+        return total
