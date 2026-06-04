@@ -358,15 +358,29 @@ flowchart TD
 
 ## 8. Skills usage
 
-Invoked where they directly improve the deliverable: **karpathy-guidelines** (surgical coding
-discipline, throughout); **scientific-visualization** (`reporting/style.py` + `figures.py`);
-**citation-management** (validate reference-DB DOIs + `bibliography.py` BibTeX);
-**scientific-writing** (`methods.py` IMRAD-grade prose); **statistical-analysis** / **statsmodels**
-(AIC/BIC model-selection reporting, Type A stats); **scientific-critical-thinking** /
-**hypothesis-generation** (sanity-check which guardrail traps must fail loud). **scikit-learn**,
-**seaborn**, **matlab** consulted only if a concrete need arises. **frontend-design / taste-skill /
-webapp-testing / docx / pdf** belong to the deferred web-UI and document-export passes — out of
-scope this pass.
+> **REFINEMENT — invoke every applicable skill (per domain-owner request).** The build genuinely
+> exercises **13 of the 16** `.claude/skills`. Each is tied to a concrete deliverable, not name-dropped:
+
+| Skill | Where it is genuinely used |
+|---|---|
+| **karpathy-guidelines** | Surgical coding discipline applied throughout (no overcomplication, verifiable success criteria). |
+| **scientific-visualization** | `reporting/style.py` + `figures.py` — publication multi-panel, colorblind-safe, journal formatting. |
+| **citation-management** | Validate the reference-DB citations/DOIs and emit `bibliography.py` BibTeX. |
+| **scientific-writing** | `methods.py` — IMRAD-grade methods prose snippet. |
+| **statistical-analysis** | Model-selection reporting (AICc/BIC), Type A stats, assumption checks. |
+| **statsmodels** | Fit diagnostics / residual + information-criterion cross-checks. |
+| **scientific-critical-thinking** | Evaluate QC + guardrail validity (which traps must fail loud). |
+| **hypothesis-generation** | Frame "which model / how many poles" as explicit, testable hypotheses in the worked example. |
+| **scikit-learn** | Robust repeat-outlier screen (k·MAD / RobustScaler) and selection utilities in `io/campaign.py`. |
+| **seaborn** | Pre-fit data-quality EDA figures (noise, sampling adequacy) in the worked example. |
+| **matlab** | A MATLAB/Octave **reference port** of the core model evaluator + Cole-Cole fitter (`matlab/`), cross-checked numerically against the Python (your group ports MATLAB per `STACK.md`). |
+| **docx** | `reporting/report_docx.py` — a Word publication-appendix report (figures, tables, params±u, manifest, references). |
+| **pdf** | `reporting/report_pdf.py` — the same appendix as a PDF. |
+
+> **Not invoked this pass (honest):** **frontend-design**, **taste-skill**, **webapp-testing** — these
+> require a web UI, which is deferred by the "core library first" scope decision. They are the
+> *primary* skills of the deferred UI pass; invoking them now would be theatre. Flagged so the
+> all-skills request is met transparently rather than overclaimed.
 
 ---
 
@@ -399,8 +413,15 @@ scope this pass.
 
 ---
 
-## 11. Open decisions to confirm with the domain owner
-1. **Data identity** (§1): which of `h02s19m*` / `h02v*` is the sample vs the reference, and which
-   reference material the validation set is.
-2. **`campaign.validated` rule** (§4c): all validation sets must pass (recommended) vs ≥ 1.
-3. **Measurement temperature** for the `h02` campaign (§4b) — affects the QC tolerance path.
+## 11. Decisions — RESOLVED with domain owner (2026-06-04)
+1. **Data identity** (§1): `h02s19m*` = measurement (the sample); `h02v*` = validation. The
+   validation reference is a **saline solution** — for this campaign **0.9% NaCl (~0.154 M)** — but
+   the saline reference model must be **parameterizable by molarity** (0.9%, 0.1 M, 0.05 M, …, or
+   arbitrary), since the group uses different concentrations. `reference/liquids.py` exposes
+   `saline(molarity=..., temperature=...)` built on the Stogryn/Peyman model; `0.9%` is the default
+   used in the worked example, not a hard-coded constant.
+2. **`campaign.validated` rule** (§4c): **all** declared validation sets must pass QC for a campaign
+   to be `validated`; per-set verdicts are reported regardless; no validation set → "NOT VALIDATED".
+3. **Measurement temperature** (§4b): assume **25 °C**; reference models are evaluated at 25 °C.
+   `temperature` remains a campaign field so other campaigns can override it (and the unknown→widened
+   path stays available), but 25 °C is the documented default for `h02`.
