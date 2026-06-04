@@ -30,7 +30,45 @@ from .result import FitResult
 #: ΔAICc below which two models are "indistinguishable", so the simpler one wins (Burnham-Anderson).
 PARSIMONY_DELTA_AICC = 2.0
 
+#: A fit is "degenerate" (parameters unidentifiable) if its largest regularized relative parameter
+#: uncertainty exceeds this. Such a fit may have a low AICc yet be physically meaningless (e.g. a
+#: slow relaxation pole absorbing the DC-conduction tail, collapsing σ to ~0 with a huge error bar).
+DEGENERACY_THRESHOLD = 1.0
+
+#: Per-parameter scale used to regularize relative uncertainty so a legitimately-near-zero parameter
+#: (e.g. α→0 in the Debye limit) is not falsely flagged.
+_PARAM_SCALE: dict[str, float] = {
+    "eps_inf": 1.0,
+    "delta_eps": 1.0,
+    "tau": 0.0,  # τ > 0 always; use plain relative uncertainty
+    "alpha": 0.1,
+    "beta": 0.1,
+    "sigma": 0.1,
+    "sigma_dc": 0.1,
+    "A": 1.0,
+    "n": 0.1,
+}
+
 FitFn = Callable[[Spectrum], FitResult]
+
+
+def max_relative_uncertainty(result: FitResult) -> float:
+    """Largest regularized relative parameter uncertainty ``u / (|value| + scale)`` over the fit.
+
+    The per-parameter ``scale`` floor prevents a near-zero-but-well-determined parameter from being
+    flagged while still catching a genuinely unconstrained one (large ``u`` with tiny ``|value|``).
+    """
+    import re
+
+    worst = 0.0
+    for name in result.model.param_names:
+        value = abs(result.params[name])
+        unc = result.param_uncertainties.get(name, float("inf"))
+        base = re.sub(r"_\d+$", "", name)
+        scale = _PARAM_SCALE.get(base, 0.0)
+        rel = unc / (value + scale) if (value + scale) > 0 else float("inf")
+        worst = max(worst, rel)
+    return worst
 
 
 class ModelSelectionWarning(UserWarning):
@@ -86,6 +124,8 @@ class RankedFit:
     result: FitResult
     delta_aicc: float
     overparameterized: bool
+    degenerate: bool  # parameters unidentifiable (see DEGENERACY_THRESHOLD)
+    max_rel_uncertainty: float
 
 
 @dataclass(frozen=True)
@@ -104,7 +144,13 @@ class ModelSelectionResult:
         for rf in self.ranking:
             r = rf.result
             mark = " *" if rf.label == self.chosen.label else ""
-            flag = " (overparam)" if rf.overparameterized else ""
+            flag = (
+                " (overparam)"
+                if rf.overparameterized
+                else " (degenerate)"
+                if rf.degenerate
+                else ""
+            )
             rows.append(
                 f"{rf.label:<24}{r.n_params:>3}{r.chi2_reduced:>12.4g}{r.aicc:>12.4g}"
                 f"{rf.delta_aicc:>10.2f}{r.bic:>12.4g}{r.r_squared:>10.6f}{mark}{flag}"
@@ -150,21 +196,37 @@ def select_model(
     ranking: list[RankedFit] = []
     for label, res in fitted:
         overparam = res.n_data - res.n_params - 1 <= 0
-        ranking.append(RankedFit(label, res, res.aicc - best_aicc, overparam))
+        mru = max_relative_uncertainty(res)
+        degenerate = mru > DEGENERACY_THRESHOLD
+        ranking.append(RankedFit(label, res, res.aicc - best_aicc, overparam, degenerate, mru))
 
-    # Recommendation: among models within ΔAICc of the best, choose the most parsimonious (fewest
-    # parameters); this prevents chasing marginal residual gains with extra poles.
-    contenders = [rf for rf in ranking if not rf.overparameterized]
-    if not contenders:
-        contenders = ranking
-    within = [rf for rf in contenders if rf.delta_aicc <= PARSIMONY_DELTA_AICC]
-    recommended = min(within, key=lambda rf: rf.result.n_params) if within else contenders[0]
+    # Recommendation: only among *acceptable* fits — not over-parameterized and not degenerate
+    # (identifiable parameters). Among those, re-reference ΔAICc to the best acceptable fit and pick
+    # the most parsimonious within the parsimony band, so we never chase a lower AICc into a
+    # physically meaningless fit (e.g. a collapsed σ). Fall back to all fits only if none qualify.
+    acceptable = [rf for rf in ranking if not rf.overparameterized and not rf.degenerate]
+    pool = acceptable or ranking
+    best_pool_aicc = min(rf.result.aicc for rf in pool)
+    within = [rf for rf in pool if rf.result.aicc - best_pool_aicc <= PARSIMONY_DELTA_AICC]
+    recommended = min(within, key=lambda rf: rf.result.n_params) if within else min(
+        pool, key=lambda rf: rf.result.aicc
+    )
+    if not acceptable:
+        warns.append(
+            "every candidate is over-parameterized or has unidentifiable parameters; the "
+            "recommendation is the least-bad fit — inspect parameter uncertainties first."
+        )
 
     for rf in ranking:
         if rf.overparameterized:
             warns.append(
                 f"'{rf.label}' is over-parameterized for this data "
                 f"(k={rf.result.n_params}, N={rf.result.n_data}); AICc is unreliable."
+            )
+        elif rf.degenerate:
+            warns.append(
+                f"'{rf.label}' has unidentifiable parameters (max relative uncertainty "
+                f"{rf.max_rel_uncertainty:.1f}); a lower AICc here is not physically trustworthy."
             )
 
     # Override handling.

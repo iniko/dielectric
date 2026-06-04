@@ -116,6 +116,24 @@ def test_override_unknown_label_raises() -> None:
         select_model(_h02_like(), force_model="Nonexistent")
 
 
+def test_degenerate_fit_not_recommended() -> None:
+    """A lower-AICc fit whose parameters are unidentifiable must not be recommended."""
+    import warnings as _w
+
+    from dielectric.io import MeasurementSet
+
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+        ms = MeasurementSet.from_glob("data/h02s19m*.csv")
+        s = ms.type_a().mean
+        sel = select_model(s)
+    # The N=2/N=3 multipole fits have lower AICc but collapse σ (degenerate); the identifiable
+    # Cole-Cole + DC σ (σ ≈ 0.8 S/m) must be recommended instead.
+    assert sel.recommended.label == "Cole-Cole + DC σ"
+    assert sel.recommended.result.params["sigma_dc"] == pytest.approx(0.8, abs=0.15)
+    assert any(rf.degenerate for rf in sel.ranking if "MultiPole" in rf.label)
+
+
 def test_generic_fit_accepts_explicit_p0() -> None:
     truth = Debye(5.0, 70.0, 8e-12)
     s = Spectrum(F, truth.epsilon(F))
