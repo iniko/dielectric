@@ -49,6 +49,7 @@ with sync_playwright() as p:
     file_inputs = page.locator('input[type="file"]')
     obs.append(("two file dropzones (measurement + validation)", file_inputs.count() == 2))
 
+    # batch A
     file_inputs.nth(0).set_input_files(meas)
     page.wait_for_timeout(600)
     obs.append(("staged file table", page.locator("text=Staged files").count() >= 1))
@@ -56,6 +57,14 @@ with sync_playwright() as p:
     page.wait_for_selector("text=/\\d+\\/\\d+ repeats/", timeout=15000)
     obs.append(("measurement set card", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 1))
 
+    # batch B (a second measurement set → enables the Compare step)
+    file_inputs.nth(0).set_input_files(val)
+    page.wait_for_timeout(600)
+    page.get_by_role("button", name="Load measurement set").click()
+    page.wait_for_timeout(2000)
+    obs.append(("two measurement set cards", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 2))
+
+    # validation set (for the QC step)
     file_inputs.nth(1).set_input_files(val)
     page.wait_for_timeout(600)
     page.get_by_role("button", name="Load validation set").click()
@@ -97,7 +106,20 @@ with sync_playwright() as p:
                 page.locator("text=Per-frequency relative error").count() >= 1))
     page.screenshot(path="/tmp/diel_step6_reference.png", full_page=True)
 
-    # (9) step 7: Report
+    # (9) step 7: Compare batches
+    step(page, "Compare", wait_selector="text=Parameter differences")
+    obs.append(("compare overlay", page.locator("text=Real permittivity ε′").count() >= 1))
+    obs.append(("difference plot", page.locator("text=/Δε′/").count() >= 1))
+    obs.append(("parameter-diff table", page.locator("text=Parameter differences").count() >= 1))
+    obs.append(("conductivity panel by default (σ pref)",
+                page.locator("text=Conductivity σ").count() >= 1))
+    # flip the global loss-axis toggle to ε″ and confirm the lossy panel re-labels
+    page.get_by_role("button", name="ε″", exact=True).click()
+    page.wait_for_timeout(1500)
+    obs.append(("toggle switches lossy panel to ε″", page.locator("text=Loss ε″").count() >= 1))
+    page.screenshot(path="/tmp/diel_step7_compare.png", full_page=True)
+
+    # (10) step 8: Report
     step(page, "Report", wait_selector="text=Download HTML report")
     obs.append(("methods paragraph", page.locator("text=non-linear least squares").count() >= 1))
     obs.append(("HTML report download",

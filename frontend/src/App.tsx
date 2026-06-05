@@ -1,10 +1,19 @@
 import { useState } from "react";
 import AnalysisWorkflow from "./workflows/AnalysisWorkflow";
 import BudgetWorkflow from "./workflows/BudgetWorkflow";
+import { PreferencesProvider, usePreferences } from "./preferences";
 
 type Tab = "analysis" | "budget";
 
 export default function App() {
+  return (
+    <PreferencesProvider>
+      <AppInner />
+    </PreferencesProvider>
+  );
+}
+
+function AppInner() {
   const [tab, setTab] = useState<Tab>("analysis");
 
   return (
@@ -22,14 +31,17 @@ export default function App() {
             Already-inverted ε*(f) → fit → verify → uncertainty → publication-ready report.
           </p>
         </div>
-        <nav className="flex gap-1 rounded-xl border border-[var(--color-line)] bg-[var(--color-ink-900)] p-1">
-          <TabButton active={tab === "analysis"} onClick={() => setTab("analysis")}>
-            Dielectric Analysis
-          </TabButton>
-          <TabButton active={tab === "budget"} onClick={() => setTab("budget")}>
-            Uncertainty Budget
-          </TabButton>
-        </nav>
+        <div className="flex flex-col items-end gap-2">
+          <LossModeToggle />
+          <nav className="flex gap-1 rounded-xl border border-[var(--color-line)] bg-[var(--color-ink-900)] p-1">
+            <TabButton active={tab === "analysis"} onClick={() => setTab("analysis")}>
+              Dielectric Analysis
+            </TabButton>
+            <TabButton active={tab === "budget"} onClick={() => setTab("budget")}>
+              Uncertainty Budget
+            </TabButton>
+          </nav>
+        </div>
       </header>
 
       {tab === "analysis" ? <AnalysisWorkflow /> : <BudgetWorkflow />}
@@ -39,6 +51,35 @@ export default function App() {
         — confirm against IFAC/IT'IS before citing. A thin UI over the validated{" "}
         <span className="text-slate-400">dielectric</span> Python library.
       </footer>
+    </div>
+  );
+}
+
+function LossModeToggle() {
+  const { lossMode, setLossMode } = usePreferences();
+  const opts: { key: "sigma" | "loss"; label: string }[] = [
+    { key: "sigma", label: "σ (S/m)" },
+    { key: "loss", label: "ε″" },
+  ];
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] uppercase tracking-widest text-slate-500">loss axis</span>
+      <div className="flex gap-0.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-ink-900)] p-0.5">
+        {opts.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => setLossMode(o.key)}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+              lossMode === o.key
+                ? "bg-[var(--color-signal)] text-ink-950"
+                : "text-slate-400 hover:text-slate-100"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

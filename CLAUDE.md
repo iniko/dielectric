@@ -22,7 +22,7 @@ Use the project venv (`.venv/bin/...`). Install: `pip install -e ".[dev,report,h
 # Library gates (must all pass before committing)
 .venv/bin/ruff check .                      # lints the WHOLE repo (see exclusions in pyproject)
 .venv/bin/mypy dielectric                   # strict
-.venv/bin/python -m pytest                  # 86 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
+.venv/bin/python -m pytest                  # 90 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
 .venv/bin/python -m pytest tests/test_fitting.py::test_conductivity_recovered   # single test
 
 # Backend
@@ -82,21 +82,29 @@ contain no numerics. `services._finite()` clamps inf/nan (AICc, dof) for JSON. B
 `POST /campaigns/{id}/analyze`, the API is decomposed into **per-step endpoints** for the stepwise
 UI: `GET /sets/{id}/repeats` (Type A band + distribution), `POST /campaigns/{id}/fit` (re-fittable;
 caches the fit in `STORE.fits`), `GET /campaigns/{id}/kk` (predicted-vs-measured ε′ arrays),
-`POST /sets/{id}/reference-match`, `POST /sets/{id}/saline-sweep`. Numerics for these live in the
-library (`uncertainty.typea.confidence_band`/`repeat_distribution`, `verification.reference_overlay`)
-— services stays a thin mapper. NB: analysis results/verdicts are keyed by sample **name**
-(`SetSummary.name`), not the upload UUID (`SetSummary.id`).
+`POST /sets/{id}/reference-match`, `POST /sets/{id}/saline-sweep`, and
+`POST /campaigns/{id}/compare` (batch-vs-batch). Numerics for these live in the library
+(`uncertainty.typea.confidence_band`/`repeat_distribution`, `verification.reference_overlay`,
+`comparison.compare_spectra`/`compare_parameters`) — services stays a thin mapper. NB: analysis
+results/verdicts and compare batches are keyed by sample **name** (`SetSummary.name`), not the upload
+UUID (`SetSummary.id`).
 
 **Frontend** (`frontend/src/`): two top-level workflows in `workflows/`. AnalysisWorkflow is a
 **free-navigation stepper** (`components/Stepper.tsx`) over Load → Repeats → Model fit →
-Kramers-Kronig → Validation → Reference match → Report, with shared state in `AnalysisContext.tsx`
+Kramers-Kronig → Validation → Reference match → Compare → Report (the **Compare** step is enabled
+only with ≥2 measurement batches; it overlays them and z-scores/per-frequency-tests the differences),
+with shared state in `AnalysisContext.tsx`
 (`ensureCampaign`/`ensureFit`/`ensureAnalysis` memoize backend calls by a signature of set-ids +
 fit request). Each step lives in `workflows/steps/`. BudgetWorkflow = live GUM sandbox. Plotly via
 `react-plotly.js/factory` + `plotly.js-dist-min` (types declared in `shims.d.ts`); plot components in
 `components/Plots.tsx`. The Load step stages files client-side (per-file × unload) and only uploads a
 set on "Load". Model customization is **constrained** (family + poles + DC-σ toggle); fixing
-individual parameters is deliberately rejected backend-side. `types.ts` mirrors the backend schemas —
-keep them in sync when changing the API.
+individual parameters is deliberately rejected backend-side. A global, persisted display preference
+(`preferences.tsx`, `localStorage`) toggles the lossy quantity between **effective conductivity σ
+(default)** and dielectric loss ε″; it's a pure client-side conversion (`σ = 2π·f·ε₀·ε″`) threaded as
+a `mode` prop into the loss-axis plots (Bode, overlays, residuals, repeat/compare bands). The
+Cole-Cole/Argand plot stays −Im(ε*) by definition. `types.ts` mirrors the backend schemas — keep them
+in sync when changing the API.
 
 ## Domain conventions you must respect
 

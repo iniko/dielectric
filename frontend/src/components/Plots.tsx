@@ -2,6 +2,7 @@
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
 import type { KKDetail, RefOverlay, RepeatBand, ResidualSeries, SpectrumPlot } from "../types";
+import { type LossMode, lossAxisTitle, toLoss, toSigma } from "../preferences";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -58,7 +59,12 @@ export function ColeColePlot({ data }: { data: SpectrumPlot }) {
   );
 }
 
-export function BodePlot({ data }: { data: SpectrumPlot }) {
+function asLossy(loss: number[], freq: number[], mode: LossMode): number[] {
+  return mode === "sigma" ? loss.map((v, i) => toSigma(v, freq[i])) : loss;
+}
+
+export function BodePlot({ data, mode = "loss" }: { data: SpectrumPlot; mode?: LossMode }) {
+  const name = mode === "sigma" ? "σ" : "ε″";
   return (
     <Plot
       data={[
@@ -80,19 +86,19 @@ export function BodePlot({ data }: { data: SpectrumPlot }) {
         },
         {
           x: data.frequency_hz,
-          y: data.loss,
+          y: asLossy(data.loss, data.frequency_hz, mode),
           mode: "markers",
           type: "scatter",
-          name: "ε″ data",
+          name: `${name} data`,
           yaxis: "y2",
           marker: { color: VIOLET, size: 5 },
         },
         {
           x: data.fit_frequency_hz,
-          y: data.fit_loss,
+          y: asLossy(data.fit_loss, data.fit_frequency_hz, mode),
           mode: "lines",
           type: "scatter",
-          name: "ε″ fit",
+          name: `${name} fit`,
           yaxis: "y2",
           line: { color: VIOLET, width: 2, dash: "dot" },
         },
@@ -102,7 +108,7 @@ export function BodePlot({ data }: { data: SpectrumPlot }) {
         xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
         yaxis: { title: { text: "ε′" }, gridcolor: GRID, zeroline: false },
         yaxis2: {
-          title: { text: "ε″" },
+          title: { text: lossAxisTitle(mode) },
           overlaying: "y",
           side: "right",
           showgrid: false,
@@ -124,15 +130,19 @@ export function RepeatBandPlot({
   quantity,
 }: {
   band: RepeatBand;
-  quantity: "eps" | "sigma";
+  quantity: "eps" | "sigma" | "loss";
 }) {
   const isEps = quantity === "eps";
   const x = band.frequency_hz;
-  const mean = isEps ? band.eps_real : band.sigma;
-  const lo = isEps ? band.eps_real_lo : band.sigma_lo;
-  const hi = isEps ? band.eps_real_hi : band.sigma_hi;
+  // σ and ε″ differ by σ = 2πf·ε₀·ε″, so the loss band is the σ band converted point-by-point.
+  const conv = (v: number, i: number) => (quantity === "loss" ? toLoss(v, x[i]) : v);
+  const mean = isEps ? band.eps_real : band.sigma.map(conv);
+  const lo = isEps ? band.eps_real_lo : band.sigma_lo.map(conv);
+  const hi = isEps ? band.eps_real_hi : band.sigma_hi.map(conv);
   const color = isEps ? SIGNAL : VIOLET;
   const rgb = isEps ? "45,212,191" : "167,139,250";
+  const label = isEps ? "ε′" : quantity === "loss" ? "ε″" : "σ";
+  const yTitle = isEps ? "ε′" : lossAxisTitle(quantity === "loss" ? "loss" : "sigma");
   return (
     <Plot
       data={[
@@ -151,7 +161,7 @@ export function RepeatBandPlot({
           x,
           y: mean,
           mode: "lines+markers",
-          name: isEps ? "ε′ mean" : "σ mean",
+          name: `${label} mean`,
           line: { color, width: 2 },
           marker: { color, size: 4 },
         },
@@ -159,11 +169,7 @@ export function RepeatBandPlot({
       layout={{
         ...baseLayout,
         xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
-        yaxis: {
-          title: { text: isEps ? "ε′" : "σ_eff (S/m)" },
-          gridcolor: GRID,
-          zeroline: false,
-        },
+        yaxis: { title: { text: yTitle }, gridcolor: GRID, zeroline: false },
       }}
       config={config}
       style={{ width: "100%", height: PLOT_H }}
@@ -206,7 +212,14 @@ export function KKPlot({ kk }: { kk: KKDetail }) {
 }
 
 // Fit residuals Δε′ and Δε″ (model − data) vs frequency, with a zero reference line.
-export function ResidualPlot({ residual }: { residual: ResidualSeries }) {
+export function ResidualPlot({
+  residual,
+  mode = "loss",
+}: {
+  residual: ResidualSeries;
+  mode?: LossMode;
+}) {
+  const lossyResid = asLossy(residual.residual_loss, residual.frequency_hz, mode);
   return (
     <Plot
       data={[
@@ -219,9 +232,9 @@ export function ResidualPlot({ residual }: { residual: ResidualSeries }) {
         },
         {
           x: residual.frequency_hz,
-          y: residual.residual_loss,
+          y: lossyResid,
           mode: "markers",
-          name: "Δε″",
+          name: mode === "sigma" ? "Δσ" : "Δε″",
           marker: { color: VIOLET, size: 5 },
         },
       ]}
@@ -267,7 +280,14 @@ export function SeriesPlot({
 }
 
 // Measurement-vs-reference overlay (ε′ and ε″) for the validation / reference-match steps.
-export function ReferenceOverlayPlot({ overlay }: { overlay: RefOverlay }) {
+export function ReferenceOverlayPlot({
+  overlay,
+  mode = "loss",
+}: {
+  overlay: RefOverlay;
+  mode?: LossMode;
+}) {
+  const name = mode === "sigma" ? "σ" : "ε″";
   return (
     <Plot
       data={[
@@ -287,17 +307,17 @@ export function ReferenceOverlayPlot({ overlay }: { overlay: RefOverlay }) {
         },
         {
           x: overlay.frequency_hz,
-          y: overlay.meas_loss,
+          y: asLossy(overlay.meas_loss, overlay.frequency_hz, mode),
           mode: "markers",
-          name: "ε″ measured",
+          name: `${name} measured`,
           yaxis: "y2",
           marker: { color: VIOLET, size: 5 },
         },
         {
           x: overlay.frequency_hz,
-          y: overlay.ref_loss,
+          y: asLossy(overlay.ref_loss, overlay.frequency_hz, mode),
           mode: "lines",
-          name: "ε″ reference",
+          name: `${name} reference`,
           yaxis: "y2",
           line: { color: VIOLET, width: 2, dash: "dot" },
         },
@@ -307,12 +327,118 @@ export function ReferenceOverlayPlot({ overlay }: { overlay: RefOverlay }) {
         xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
         yaxis: { title: { text: "ε′" }, gridcolor: GRID, zeroline: false },
         yaxis2: {
-          title: { text: "ε″" },
+          title: { text: lossAxisTitle(mode) },
           overlaying: "y",
           side: "right",
           showgrid: false,
           zeroline: false,
         },
+      }}
+      config={config}
+      style={{ width: "100%", height: PLOT_H }}
+      useResizeHandler
+    />
+  );
+}
+
+const PALETTE = [
+  "#2dd4bf", "#fbbf24", "#a78bfa", "#fb7185", "#60a5fa", "#34d399", "#f472b6", "#f59e0b",
+];
+
+export interface OverlaySeries {
+  name: string;
+  frequency_hz: number[];
+  eps_real: number[];
+  loss: number[];
+}
+
+// One trace per batch — ε′ vs f, σ/ε″ vs f, or a Cole-Cole (ε″ vs ε′, always −Im) overlay.
+export function BatchOverlayPlot({
+  series,
+  field,
+  mode = "loss",
+}: {
+  series: OverlaySeries[];
+  field: "eps" | "lossy" | "argand";
+  mode?: LossMode;
+}) {
+  const traces = series.map((s, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    if (field === "argand") {
+      return {
+        x: s.eps_real, y: s.loss, mode: "lines+markers", name: s.name,
+        line: { color, width: 2 }, marker: { color, size: 4 },
+      };
+    }
+    const y = field === "eps" ? s.eps_real : asLossy(s.loss, s.frequency_hz, mode);
+    return {
+      x: s.frequency_hz, y, mode: "lines+markers", name: s.name,
+      line: { color, width: 2 }, marker: { color, size: 4 },
+    };
+  });
+  const layout =
+    field === "argand"
+      ? {
+          ...baseLayout,
+          xaxis: { title: { text: "ε′" }, gridcolor: GRID, zeroline: false },
+          yaxis: { title: { text: "ε″ = −Im(ε*)" }, gridcolor: GRID, zeroline: false },
+        }
+      : {
+          ...baseLayout,
+          xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+          yaxis: {
+            title: { text: field === "eps" ? "ε′" : lossAxisTitle(mode) },
+            gridcolor: GRID,
+            zeroline: false,
+          },
+        };
+  return (
+    <Plot
+      data={traces}
+      layout={layout}
+      config={config}
+      style={{ width: "100%", height: PLOT_H }}
+      useResizeHandler
+    />
+  );
+}
+
+// Batch-difference Δ(f) with its 95% CI band and the significant points highlighted.
+export function DiffPlot({
+  frequency,
+  delta,
+  se,
+  significant,
+  yTitle,
+}: {
+  frequency: number[];
+  delta: number[];
+  se: number[];
+  significant: boolean[];
+  yTitle: string;
+}) {
+  const hi = delta.map((d, i) => d + 1.96 * se[i]);
+  const lo = delta.map((d, i) => d - 1.96 * se[i]);
+  const sigX = frequency.filter((_, i) => significant[i]);
+  const sigY = delta.filter((_, i) => significant[i]);
+  return (
+    <Plot
+      data={[
+        { x: frequency, y: lo, mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" },
+        {
+          x: frequency, y: hi, mode: "lines", line: { width: 0 }, fill: "tonexty",
+          fillcolor: "rgba(148,163,184,0.18)", name: "95% CI", hoverinfo: "skip",
+        },
+        { x: frequency, y: delta, mode: "lines", name: "Δ", line: { color: SIGNAL, width: 2 } },
+        {
+          x: sigX, y: sigY, mode: "markers", name: "significant",
+          marker: { color: ROSE, size: 6 },
+        },
+      ]}
+      layout={{
+        ...baseLayout,
+        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        yaxis: { title: { text: yTitle }, gridcolor: GRID, zeroline: true, zerolinecolor: "#475569" },
       }}
       config={config}
       style={{ width: "100%", height: PLOT_H }}

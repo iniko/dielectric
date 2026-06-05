@@ -9,6 +9,7 @@ import FitStep from "./steps/FitStep";
 import KKStep from "./steps/KKStep";
 import ValidationStep from "./steps/ValidationStep";
 import ReferenceStep from "./steps/ReferenceStep";
+import CompareStep from "./steps/CompareStep";
 import ReportStep from "./steps/ReportStep";
 
 const STEPS = [
@@ -18,6 +19,7 @@ const STEPS = [
   { key: "kk", label: "Kramers-Kronig", Component: KKStep },
   { key: "validation", label: "Validation", Component: ValidationStep },
   { key: "reference", label: "Reference match", Component: ReferenceStep },
+  { key: "compare", label: "Compare", Component: CompareStep },
   { key: "report", label: "Report", Component: ReportStep },
 ];
 
@@ -33,18 +35,24 @@ function Shell() {
   const { measurements } = useAnalysis();
   const [current, setCurrent] = useState(0);
   const ready = measurements.length > 0;
+  const canCompare = measurements.length >= 2; // comparison needs at least two batches
+
+  const stepEnabled = (key: string, i: number) =>
+    i === 0 || (ready && (key !== "compare" || canCompare));
 
   const steps: StepDef[] = STEPS.map((s, i) => ({
     key: s.key,
     label: s.label,
-    enabled: i === 0 || ready,
+    enabled: stepEnabled(s.key, i),
   }));
 
   const Current = STEPS[current].Component;
 
   function go(delta: number) {
-    const next = current + delta;
-    if (next >= 0 && next < STEPS.length && (next === 0 || ready)) setCurrent(next);
+    let next = current + delta;
+    // skip over a disabled step (e.g. Compare with <2 batches) in the travel direction
+    while (next > 0 && next < STEPS.length && !stepEnabled(STEPS[next].key, next)) next += delta;
+    if (next >= 0 && next < STEPS.length && stepEnabled(STEPS[next].key, next)) setCurrent(next);
   }
 
   return (

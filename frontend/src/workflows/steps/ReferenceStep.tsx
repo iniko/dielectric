@@ -3,6 +3,7 @@ import * as api from "../../api";
 import type { AnalysisResult, MaterialOut, SetSummary } from "../../types";
 import { Badge, Card, Stat } from "../../components/ui";
 import { ReferenceOverlayPlot, SeriesPlot } from "../../components/Plots";
+import { usePreferences } from "../../preferences";
 import { useAnalysis } from "../AnalysisContext";
 import { ErrorMsg, Loading, Note, PanelLabel, StepIntro, useAsync } from "./common";
 
@@ -62,6 +63,7 @@ function ReferencePanel({
   options: string[];
   result?: AnalysisResult;
 }) {
+  const { lossMode } = usePreferences();
   const closest = result?.closest_materials ?? [];
   const [reference, setReference] = useState<string>("");
 
@@ -122,7 +124,7 @@ function ReferencePanel({
           <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
             <div>
               <PanelLabel>Measured vs {data.reference_label}</PanelLabel>
-              <ReferenceOverlayPlot overlay={data.overlay} />
+              <ReferenceOverlayPlot overlay={data.overlay} mode={lossMode} />
             </div>
             <div>
               <PanelLabel>Per-frequency relative error</PanelLabel>

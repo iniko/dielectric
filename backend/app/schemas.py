@@ -261,6 +261,68 @@ class SalineSweepOut(BaseModel):
     rows: list[SalineSweepRow]  # sorted by rms ascending
 
 
+# ---- batch comparison (normal vs diseased, etc.) ----------------------------------------------
+
+
+class ParamSummary(BaseModel):
+    eps_static: float
+    eps_static_u: float
+    eps_inf: float
+    eps_inf_u: float
+    tau_dominant_s: float
+    tau_dominant_u: float
+    sigma_dc: float | None = None
+    sigma_dc_u: float | None = None
+
+
+class BatchSummary(BaseModel):
+    sample_id: str
+    model: str
+    band: RepeatBand  # ε′ + σ_eff means with 95% CI
+    params: ParamSummary
+
+
+class SpectrumDiff(BaseModel):
+    frequency_hz: list[float]
+    delta_eps_real: list[float]
+    se_eps_real: list[float]
+    significant_eps: list[bool]
+    delta_sigma: list[float]
+    se_sigma: list[float]
+    significant_sigma: list[bool]
+    coverage_k: float
+    notes: list[str]
+
+
+class ParamDiff(BaseModel):
+    name: str
+    a: float
+    ua: float
+    b: float
+    ub: float
+    delta: float
+    z: float
+    significant: bool
+
+
+class BatchDifference(BaseModel):
+    sample_id: str  # batch A (vs the baseline)
+    baseline: str  # batch B
+    spectrum: SpectrumDiff
+    params: list[ParamDiff]
+
+
+class CompareRequest(BaseModel):
+    baseline: str | None = None  # sample_id to use as the reference batch; default = first
+
+
+class CompareOut(BaseModel):
+    campaign_id: str
+    baseline: str
+    batches: list[BatchSummary]
+    differences: list[BatchDifference]  # one per non-baseline batch, vs the baseline
+
+
 class BudgetComponentIn(BaseModel):
     name: str
     standard_uncertainty: float

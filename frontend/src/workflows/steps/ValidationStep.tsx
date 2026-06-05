@@ -2,6 +2,7 @@ import * as api from "../../api";
 import type { SetSummary, ValidationVerdict } from "../../types";
 import { Badge, Card, Stat } from "../../components/ui";
 import { ReferenceOverlayPlot } from "../../components/Plots";
+import { usePreferences } from "../../preferences";
 import { useAnalysis } from "../AnalysisContext";
 import { ErrorMsg, Loading, Note, PanelLabel, StepIntro, useAsync } from "./common";
 
@@ -70,6 +71,7 @@ function ValidationPanel({
   temperature: number;
   verdict?: ValidationVerdict;
 }) {
+  const { lossMode } = usePreferences();
   const reference = set.reference ?? "saline";
   const isSaline = reference === "saline";
   const { data, loading, error } = useAsync(
@@ -108,7 +110,7 @@ function ValidationPanel({
           </div>
           <div className="mt-4">
             <PanelLabel>Measured vs reference</PanelLabel>
-            <ReferenceOverlayPlot overlay={data.overlay} />
+            <ReferenceOverlayPlot overlay={data.overlay} mode={lossMode} />
           </div>
           {data.notes.map((n, i) => (
             <p key={i} className="mt-2 text-xs text-amber-300">

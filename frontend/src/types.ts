@@ -218,6 +218,63 @@ export interface SalineSweepOut {
   rows: SalineSweepRow[];
 }
 
+// ---- batch comparison ----
+
+export interface ParamSummary {
+  eps_static: number;
+  eps_static_u: number;
+  eps_inf: number;
+  eps_inf_u: number;
+  tau_dominant_s: number;
+  tau_dominant_u: number;
+  sigma_dc?: number | null;
+  sigma_dc_u?: number | null;
+}
+
+export interface BatchSummary {
+  sample_id: string;
+  model: string;
+  band: RepeatBand;
+  params: ParamSummary;
+}
+
+export interface SpectrumDiff {
+  frequency_hz: number[];
+  delta_eps_real: number[];
+  se_eps_real: number[];
+  significant_eps: boolean[];
+  delta_sigma: number[];
+  se_sigma: number[];
+  significant_sigma: boolean[];
+  coverage_k: number;
+  notes: string[];
+}
+
+export interface ParamDiff {
+  name: string;
+  a: number;
+  ua: number;
+  b: number;
+  ub: number;
+  delta: number;
+  z: number;
+  significant: boolean;
+}
+
+export interface BatchDifference {
+  sample_id: string;
+  baseline: string;
+  spectrum: SpectrumDiff;
+  params: ParamDiff[];
+}
+
+export interface CompareOut {
+  campaign_id: string;
+  baseline: string;
+  batches: BatchSummary[];
+  differences: BatchDifference[];
+}
+
 export interface BudgetComponentIn {
   name: string;
   standard_uncertainty: number;

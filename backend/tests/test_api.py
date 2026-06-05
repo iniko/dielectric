@@ -218,3 +218,43 @@ def test_html_report_is_self_contained() -> None:
 def test_unknown_set_404() -> None:
     assert client.get("/api/sets/nope/repeats").status_code == 404
     assert client.post("/api/sets/nope/saline-sweep").status_code == 404
+
+
+def test_compare_two_batches() -> None:
+    # two batches: the muscle/saline h02 measurement set vs the validation set as a second "batch"
+    a = _upload("h02s19m*.csv", "measurement", limit=10, name="batchA")
+    b = _upload("h02v*.csv", "measurement", limit=10, name="batchB")
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [a["id"], b["id"]], "temperature_c": 25.0,
+    }).json()["id"]
+
+    resp = client.post(f"/api/campaigns/{cid}/compare", json={})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert {bt["sample_id"] for bt in body["batches"]} == {"batchA", "batchB"}
+    assert body["baseline"] == "batchA"  # default = first
+    assert len(body["differences"]) == 1
+    d = body["differences"][0]
+    assert d["sample_id"] == "batchB" and d["baseline"] == "batchA"
+    sp = d["spectrum"]
+    n = len(sp["frequency_hz"])
+    assert n > 10
+    assert all(len(sp[k]) == n for k in
+               ("delta_eps_real", "se_eps_real", "significant_eps", "delta_sigma"))
+    # the two genuinely different materials differ in ε′ over much of the band
+    assert sum(sp["significant_eps"]) > 0
+    names = {p["name"] for p in d["params"]}
+    assert {"eps_static", "eps_inf", "tau_dominant"} <= names
+    assert all("z" in p and "significant" in p for p in d["params"])
+
+    # an explicit baseline flips the comparison direction
+    flipped = client.post(f"/api/campaigns/{cid}/compare", json={"baseline": "batchB"}).json()
+    assert flipped["differences"][0]["sample_id"] == "batchA"
+
+
+def test_compare_needs_two_sets() -> None:
+    one = _upload("h02s19m*.csv", "measurement", limit=8, name="solo")
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [one["id"]], "temperature_c": 25.0,
+    }).json()["id"]
+    assert client.post(f"/api/campaigns/{cid}/compare", json={}).status_code == 400

@@ -2,6 +2,7 @@ import type {
   BudgetComponentIn,
   BudgetResult,
   CampaignAnalysis,
+  CompareOut,
   FitOut,
   KKDetailOut,
   MaterialOut,
@@ -106,6 +107,13 @@ export async function referenceMatch(
 
 export async function salineSweep(setId: string): Promise<SalineSweepOut> {
   return postJson(`/api/sets/${setId}/saline-sweep`, {});
+}
+
+export async function compareCampaign(
+  campaignId: string,
+  baseline?: string,
+): Promise<CompareOut> {
+  return postJson(`/api/campaigns/${campaignId}/compare`, { baseline: baseline ?? null });
 }
 
 export function reportUrl(campaignId: string, sample: string, fmt: "pdf" | "docx" | "html"): string {

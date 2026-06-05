@@ -1,6 +1,7 @@
 import type { FitResultOut } from "../../types";
 import { Badge, Card, Field, Input, Stat } from "../../components/ui";
 import { BodePlot, ColeColePlot, ResidualPlot } from "../../components/Plots";
+import { usePreferences } from "../../preferences";
 import { useAnalysis } from "../AnalysisContext";
 import { ErrorMsg, Loading, Note, PanelLabel, StepIntro, useAsync } from "./common";
 
@@ -94,6 +95,7 @@ export default function FitStep() {
 }
 
 function FitPanel({ r }: { r: FitResultOut }) {
+  const { lossMode } = usePreferences();
   return (
     <Card
       title={`Sample: ${r.sample_id}`}
@@ -106,7 +108,7 @@ function FitPanel({ r }: { r: FitResultOut }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div>
           <PanelLabel>Bode (data + fit)</PanelLabel>
-          <BodePlot data={r.plot} />
+          <BodePlot data={r.plot} mode={lossMode} />
         </div>
         <div>
           <PanelLabel>Cole-Cole</PanelLabel>
@@ -116,7 +118,7 @@ function FitPanel({ r }: { r: FitResultOut }) {
 
       <div className="mt-4">
         <PanelLabel>Residuals (model − data)</PanelLabel>
-        <ResidualPlot residual={r.residual} />
+        <ResidualPlot residual={r.residual} mode={lossMode} />
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">

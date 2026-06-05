@@ -3,6 +3,7 @@ import * as api from "../../api";
 import type { SetSummary } from "../../types";
 import { Badge, Card, Input } from "../../components/ui";
 import { RepeatBandPlot } from "../../components/Plots";
+import { usePreferences } from "../../preferences";
 import { useAnalysis } from "../AnalysisContext";
 import { ErrorMsg, Loading, Note, PanelLabel, StepIntro, useAsync } from "./common";
 
@@ -28,6 +29,7 @@ export default function RepeatsStep() {
 function RepeatPanel({ set }: { set: SetSummary }) {
   const [freqText, setFreqText] = useState("");
   const [freqs, setFreqs] = useState<number[]>([]);
+  const { lossMode } = usePreferences();
   const { data, loading, error } = useAsyncRepeats(set.id, freqs);
 
   function applyFreqs() {
@@ -59,8 +61,12 @@ function RepeatPanel({ set }: { set: SetSummary }) {
               <RepeatBandPlot band={data.band} quantity="eps" />
             </div>
             <div>
-              <PanelLabel>Effective conductivity σ (mean + 95% band)</PanelLabel>
-              <RepeatBandPlot band={data.band} quantity="sigma" />
+              <PanelLabel>
+                {lossMode === "sigma"
+                  ? "Effective conductivity σ (mean + 95% band)"
+                  : "Dielectric loss ε″ (mean + 95% band)"}
+              </PanelLabel>
+              <RepeatBandPlot band={data.band} quantity={lossMode === "sigma" ? "sigma" : "loss"} />
             </div>
           </div>
 

@@ -14,6 +14,13 @@ from typing import cast
 
 import numpy as np
 
+from dielectric.comparison import (
+    compare_parameters,
+    compare_spectra,
+    dominant_relaxation,
+    static_permittivity,
+    static_permittivity_uncertainty,
+)
 from dielectric.convention import ConventionWarning
 from dielectric.fitting import select_model
 from dielectric.fitting.result import FitResult
@@ -41,7 +48,12 @@ from dielectric.reporting import (
 from dielectric.reporting.formatting import format_measurement
 from dielectric.spectrum import Spectrum
 from dielectric.uncertainty.gum import GUMBudget, UncertaintyComponent
-from dielectric.uncertainty.typea import confidence_band, repeat_distribution
+from dielectric.uncertainty.typea import (
+    TypeABand,
+    TypeAResult,
+    confidence_band,
+    repeat_distribution,
+)
 from dielectric.verification import (
     compare_to_reference,
     find_closest_materials,
@@ -285,13 +297,16 @@ def repeats_for_set(set_id: str, frequencies_ghz: list[float]) -> schemas.Repeat
     return schemas.RepeatsOut(
         set_id=set_id, name=obj.sample_id, n_repeats=obj.n_repeats, n_used=ta.n_repeats_used,
         excluded_indices=list(ta.excluded_indices), coverage_k=band.coverage_k,
-        band=schemas.RepeatBand(
-            frequency_hz=band.frequency_hz.tolist(), eps_real=band.eps_real.tolist(),
-            eps_real_lo=band.eps_real_lo.tolist(), eps_real_hi=band.eps_real_hi.tolist(),
-            sigma=band.sigma.tolist(), sigma_lo=band.sigma_lo.tolist(),
-            sigma_hi=band.sigma_hi.tolist(),
-        ),
+        band=_repeat_band(band),
         distributions=dists,
+    )
+
+
+def _repeat_band(band: TypeABand) -> schemas.RepeatBand:
+    return schemas.RepeatBand(
+        frequency_hz=band.frequency_hz.tolist(), eps_real=band.eps_real.tolist(),
+        eps_real_lo=band.eps_real_lo.tolist(), eps_real_hi=band.eps_real_hi.tolist(),
+        sigma=band.sigma.tolist(), sigma_lo=band.sigma_lo.tolist(), sigma_hi=band.sigma_hi.tolist(),
     )
 
 
@@ -354,6 +369,78 @@ def saline_sweep_for_set(set_id: str) -> schemas.SalineSweepOut:
                 ))
     rows.sort(key=lambda r: r.rms)
     return schemas.SalineSweepOut(set_id=set_id, rows=rows)
+
+
+def _param_summary(fit: FitResult) -> schemas.ParamSummary:
+    p, u = fit.params, fit.param_uncertainties
+    tau, tau_u = dominant_relaxation(fit)
+    has_sigma = "sigma_dc" in p
+    return schemas.ParamSummary(
+        eps_static=_finite(static_permittivity(fit.model)),
+        eps_static_u=_finite(static_permittivity_uncertainty(fit)),
+        eps_inf=_finite(p["eps_inf"]), eps_inf_u=_finite(u.get("eps_inf", 0.0)),
+        tau_dominant_s=_finite(tau), tau_dominant_u=_finite(tau_u),
+        sigma_dc=_finite(p["sigma_dc"]) if has_sigma else None,
+        sigma_dc_u=_finite(u.get("sigma_dc", 0.0)) if has_sigma else None,
+    )
+
+
+def compare_campaign(campaign_id: str, req: schemas.CompareRequest) -> schemas.CompareOut:
+    """Overlay every batch and pairwise-difference each against a baseline (normal vs diseased)."""
+    cache = _fits(campaign_id)
+    sample_ids = list(cache.keys())
+    if len(sample_ids) < 2:
+        raise ValueError("comparison needs at least two measurement sets")
+    baseline = req.baseline or sample_ids[0]
+    if baseline not in cache:
+        raise ValueError(f"unknown baseline batch '{baseline}'")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        batches: list[schemas.BatchSummary] = []
+        for sid in sample_ids:
+            entry = cache[sid]
+            fit = cast(FitResult, entry["fit"])
+            sel = cast(ModelSelectionResult, entry["selection"])
+            ta = cast(TypeAResult, entry["type_a"])
+            batches.append(schemas.BatchSummary(
+                sample_id=sid, model=sel.chosen.label,
+                band=_repeat_band(confidence_band(ta)), params=_param_summary(fit),
+            ))
+
+        base_fit = cast(FitResult, cache[baseline]["fit"])
+        base_mean = cast(TypeAResult, cache[baseline]["type_a"]).mean
+        differences: list[schemas.BatchDifference] = []
+        for sid in sample_ids:
+            if sid == baseline:
+                continue
+            entry = cache[sid]
+            a_fit = cast(FitResult, entry["fit"])
+            a_mean = cast(TypeAResult, entry["type_a"]).mean
+            sd = compare_spectra(a_mean, base_mean)
+            differences.append(schemas.BatchDifference(
+                sample_id=sid, baseline=baseline,
+                spectrum=schemas.SpectrumDiff(
+                    frequency_hz=sd.frequency_hz.tolist(),
+                    delta_eps_real=sd.delta_eps_real.tolist(),
+                    se_eps_real=sd.se_eps_real.tolist(),
+                    significant_eps=[bool(x) for x in sd.significant_eps],
+                    delta_sigma=sd.delta_sigma.tolist(), se_sigma=sd.se_sigma.tolist(),
+                    significant_sigma=[bool(x) for x in sd.significant_sigma],
+                    coverage_k=sd.coverage_k, notes=list(sd.notes),
+                ),
+                params=[
+                    schemas.ParamDiff(
+                        name=pd.name, a=_finite(pd.a), ua=_finite(pd.ua), b=_finite(pd.b),
+                        ub=_finite(pd.ub), delta=_finite(pd.delta), z=_finite(pd.z),
+                        significant=pd.significant,
+                    )
+                    for pd in compare_parameters(a_fit, base_fit)
+                ],
+            ))
+    return schemas.CompareOut(
+        campaign_id=campaign_id, baseline=baseline, batches=batches, differences=differences
+    )
 
 
 def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.CampaignAnalysis:

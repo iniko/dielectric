@@ -139,6 +139,16 @@ def saline_sweep(set_id: str) -> schemas.SalineSweepOut:
         raise HTTPException(404, str(exc)) from exc
 
 
+@app.post("/api/campaigns/{campaign_id}/compare", response_model=schemas.CompareOut)
+def compare(campaign_id: str, req: schemas.CompareRequest) -> schemas.CompareOut:
+    if campaign_id not in STORE.campaigns:
+        raise HTTPException(404, "unknown campaign")
+    try:
+        return services.compare_campaign(campaign_id, req)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.get("/api/campaigns/{campaign_id}/report")
 def report(campaign_id: str, sample: str, fmt: str = "pdf") -> FileResponse:
     if fmt not in ("pdf", "docx", "html"):

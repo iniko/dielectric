@@ -11,6 +11,14 @@ The heavy reporting/figure helpers live in :mod:`dielectric.reporting` (import e
 
 from __future__ import annotations
 
+from .comparison import (
+    ParameterDifference,
+    SpectrumDifference,
+    compare_parameters,
+    compare_spectra,
+    dominant_relaxation,
+    static_permittivity,
+)
 from .constants import EPSILON_0
 from .convention import ConventionWarning
 from .fitting import FitResult, fit, fit_multipole, select_model
@@ -64,14 +72,19 @@ __all__ = [
     "JonscherUniversal",
     "MeasurementSet",
     "MultiPoleRelaxation",
+    "ParameterDifference",
     "PermittivityKind",
     "Provenance",
     "QualityReport",
     "Spectrum",
+    "SpectrumDifference",
     "SpectrumMetadata",
     "ValidationSet",
     "__version__",
     "combine_repeats",
+    "compare_parameters",
+    "compare_spectra",
+    "dominant_relaxation",
     "find_closest_materials",
     "fit",
     "fit_multipole",
@@ -81,5 +94,6 @@ __all__ = [
     "load_csv",
     "query_materials",
     "select_model",
+    "static_permittivity",
     "validate_campaign",
 ]
