@@ -58,14 +58,14 @@ def main() -> None:
         measurements=(sample,), validations=(validation,),
         metadata=CampaignMetadata(title="H02 campaign", temperature_c=25.0),
     )
-    print(f"    The 85070 export stores POSITIVE loss; the loader negated it to the internal "
-          f"e^{{jωt}} convention (Im(ε*)<0) and warned — it never silently 'fixes' data.")
+    print("    The 85070 export stores POSITIVE loss; the loader negated it to the internal "
+          "e^{jωt} convention (Im(ε*)<0) and warned — it never silently 'fixes' data.")
 
     # 2. TYPE A — average the repeats; a robust k·MAD screen drops a bad probe contact.
     ta = sample.type_a()
     spectrum = ta.mean
     print(f"\n[2] Type A averaging used {ta.n_repeats_used}/{sample.n_repeats} repeats "
-          f"(excluded {ta.excluded_indices or 'none'} via k·MAD). The per-point SEM becomes the fit weight.")
+          f"(excluded {ta.excluded_indices or 'none'} via k·MAD). Per-point SEM weights the fit.")
 
     # 3. QUALITY — look before you fit.
     q = spectrum.quality_report()
