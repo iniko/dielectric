@@ -1,0 +1,119 @@
+"""Methods-paragraph generator — publication-ready prose describing the analysis.
+
+The single highest-leverage feature for getting students to write reproducibly: it emits a
+journal-style methods snippet citing the model equation and source, the fit quality, the
+Kramers-Kronig check, and the validation status, with every parameter reported as value ± u.
+"""
+
+from __future__ import annotations
+
+from .. import __version__
+from ..fitting.result import FitResult
+from ..fitting.selection import ModelSelectionResult
+from ..verification.kramers_kronig import KKResult
+from ..verification.validation import CampaignValidation
+from .formatting import format_measurement
+
+_MODEL_PHRASES = {
+    "Debye": "a Debye relaxation model",
+    "ColeCole": "a Cole-Cole model",
+    "ColeDavidson": "a Cole-Davidson model",
+    "HavriliakNegami": "a Havriliak-Negami model",
+    "JonscherUniversal": "a Jonscher universal-response model",
+    "MultiPoleRelaxation": "a multi-pole Cole-Cole model with a DC-conductivity term",
+}
+
+
+def methods_paragraph(
+    fit: FitResult,
+    *,
+    selection: ModelSelectionResult | None = None,
+    kk: KKResult | None = None,
+    validation: CampaignValidation | None = None,
+    n_repeats: int | None = None,
+    band_ghz: tuple[float, float] | None = None,
+) -> str:
+    """Generate a publication-ready methods paragraph for one fitted spectrum."""
+    sentences: list[str] = []
+
+    model_name = type(fit.model).__name__
+    model_phrase = _MODEL_PHRASES.get(model_name, f"a {model_name} model")
+    citation = fit.model.provenance.short_citation()
+
+    # 1. Data / averaging.
+    if band_ghz is not None:
+        band = f"from {band_ghz[0]:.2g} to {band_ghz[1]:.2g} GHz"
+    else:
+        band = "across the measured band"
+    repeats = (
+        f" and averaged over {n_repeats} repeat measurements (Type A)" if n_repeats else ""
+    )
+    sentences.append(
+        f"Complex relative permittivity spectra ε*(f) were acquired {band}{repeats}, with the loss "
+        "stored in the engineering e^{jωt} convention (Im(ε*) < 0)."
+    )
+
+    # 2. Fit.
+    param_strs = [
+        format_measurement(fit.params[name], fit.param_uncertainties.get(name, 0.0))
+        for name in fit.model.param_names
+    ]
+    params_joined = "; ".join(
+        f"{n} = {p}" for n, p in zip(fit.model.param_names, param_strs, strict=True)
+    )
+    weighting = (
+        "weighted by the Type A standard error of the mean"
+        if fit.weighted
+        else "with uniform weighting"
+    )
+    sentences.append(
+        f"ε*(f) was fitted to {model_phrase} ({citation}) by non-linear least squares on the "
+        f"stacked real and imaginary residuals, {weighting}, yielding {params_joined} "
+        f"(R² = {fit.r_squared:.4f}, reduced χ² = {fit.chi2_reduced:.2g})."
+    )
+
+    # 3. Model selection.
+    if selection is not None:
+        n_cand = len(selection.ranking)
+        runner = next((rf for rf in selection.ranking if rf.label != selection.chosen.label), None)
+        delta = f"; ΔAICc to the next candidate was {runner.delta_aicc:.1f}" if runner else ""
+        how = (
+            "selected by minimum corrected-AIC (AICc) with a parsimony and identifiability check"
+            if not selection.overridden
+            else "chosen by the analyst (overriding the AICc recommendation)"
+        )
+        sentences.append(
+            f"The model was {how} among {n_cand} candidate models{delta}."
+        )
+
+    # 4. Kramers-Kronig.
+    if kk is not None:
+        verdict = "consistent" if kk.is_consistent else "inconsistent"
+        sentences.append(
+            f"Kramers-Kronig analysis found the spectrum causally {verdict} "
+            f"(relative ε' residual {kk.residual_rms * 100:.1f}%)."
+        )
+
+    # 5. Validation.
+    if validation is not None:
+        if validation.validated and validation.verdicts:
+            v = validation.verdicts[0]
+            sentences.append(
+                f"The measurement chain was validated against a known {v.reference} reference "
+                f"(ε' deviation {v.eps_real_rms * 100:.1f}%, σ_DC {v.sigma_measured:.2f} vs "
+                f"{v.sigma_reference:.2f} S/m)."
+            )
+        elif validation.has_validation:
+            sentences.append(
+                "The campaign did NOT pass reference validation; results should be treated as "
+                "provisional pending a passing QC measurement."
+            )
+        else:
+            sentences.append(
+                "No reference validation was performed, so results are reported as NOT VALIDATED."
+            )
+
+    # 6. Software.
+    sentences.append(f"Analysis used the dielectric toolkit (v{__version__}).")
+
+    return " ".join(sentences)

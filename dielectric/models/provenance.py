@@ -45,6 +45,15 @@ class Provenance:
             base += f". https://doi.org/{self.doi}"
         return base
 
+    def short_citation(self) -> str:
+        """An inline-prose citation, e.g. ``"Cole et al. (1941)"`` or ``"Debye (1929)"``."""
+        surnames = [p.strip() for p in self.authors.replace(";", ",").split(",") if p.strip()]
+        first = surnames[0] if surnames else "ref"
+        # count distinct surnames (entries that are not just initials like "K. S.")
+        names = [s for s in surnames if not all(tok.endswith(".") for tok in s.split())]
+        suffix = " et al." if len(names) > 1 else ""
+        return f"{first}{suffix} ({self.year})"
+
     def bibtex_key(self) -> str:
         first_author = self.authors.split(",")[0].split(" ")[0].strip() or "ref"
         return f"{first_author}{self.year}"

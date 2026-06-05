@@ -20,10 +20,10 @@ from .base import DielectricModel
 from .provenance import Provenance
 
 _MULTIPOLE = Provenance(
-    authors="(generalised multi-term Cole-Cole)",
+    authors="Cole, K. S., Cole, R. H.",
     year=1941,
-    title="Sum of N Cole-Cole dispersions with optional DC conductivity",
-    source="after Cole & Cole (1941), J. Chem. Phys. 9, 341",
+    title="Sum of N Cole-Cole dispersions with an optional DC-conductivity term",
+    source="generalised multi-term form after Cole & Cole, J. Chem. Phys. 9, 341",
     doi="10.1063/1.1750906",
 )
 
