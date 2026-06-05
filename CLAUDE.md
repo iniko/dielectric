@@ -22,7 +22,7 @@ Use the project venv (`.venv/bin/...`). Install: `pip install -e ".[dev,report,h
 # Library gates (must all pass before committing)
 .venv/bin/ruff check .                      # lints the WHOLE repo (see exclusions in pyproject)
 .venv/bin/mypy dielectric                   # strict
-.venv/bin/python -m pytest                  # 83 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
+.venv/bin/python -m pytest                  # 86 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
 .venv/bin/python -m pytest tests/test_fitting.py::test_conductivity_recovered   # single test
 
 # Backend
@@ -78,12 +78,25 @@ override while still reporting where the choice ranks.
 
 **Backend** (`backend/app/`): `services.py` is the ONLY place that touches the library; `main.py`
 is HTTP plumbing; `store.py` is an in-memory dict. Schemas (`schemas.py`) mirror library outputs and
-contain no numerics. `services._finite()` clamps inf/nan (AICc, dof) for JSON.
+contain no numerics. `services._finite()` clamps inf/nan (AICc, dof) for JSON. Besides the one-shot
+`POST /campaigns/{id}/analyze`, the API is decomposed into **per-step endpoints** for the stepwise
+UI: `GET /sets/{id}/repeats` (Type A band + distribution), `POST /campaigns/{id}/fit` (re-fittable;
+caches the fit in `STORE.fits`), `GET /campaigns/{id}/kk` (predicted-vs-measured ε′ arrays),
+`POST /sets/{id}/reference-match`, `POST /sets/{id}/saline-sweep`. Numerics for these live in the
+library (`uncertainty.typea.confidence_band`/`repeat_distribution`, `verification.reference_overlay`)
+— services stays a thin mapper. NB: analysis results/verdicts are keyed by sample **name**
+(`SetSummary.name`), not the upload UUID (`SetSummary.id`).
 
-**Frontend** (`frontend/src/`): two workflows in `workflows/` (AnalysisWorkflow = multi-set upload →
-analyze → plots/results/report; BudgetWorkflow = live GUM sandbox), Plotly via
-`react-plotly.js/factory` + `plotly.js-dist-min` (types declared in `shims.d.ts`). `types.ts` mirrors
-the backend schemas — keep them in sync when changing the API.
+**Frontend** (`frontend/src/`): two top-level workflows in `workflows/`. AnalysisWorkflow is a
+**free-navigation stepper** (`components/Stepper.tsx`) over Load → Repeats → Model fit →
+Kramers-Kronig → Validation → Reference match → Report, with shared state in `AnalysisContext.tsx`
+(`ensureCampaign`/`ensureFit`/`ensureAnalysis` memoize backend calls by a signature of set-ids +
+fit request). Each step lives in `workflows/steps/`. BudgetWorkflow = live GUM sandbox. Plotly via
+`react-plotly.js/factory` + `plotly.js-dist-min` (types declared in `shims.d.ts`); plot components in
+`components/Plots.tsx`. The Load step stages files client-side (per-file × unload) and only uploads a
+set on "Load". Model customization is **constrained** (family + poles + DC-σ toggle); fixing
+individual parameters is deliberately rejected backend-side. `types.ts` mirrors the backend schemas —
+keep them in sync when changing the API.
 
 ## Domain conventions you must respect
 
@@ -106,7 +119,9 @@ the backend schemas — keep them in sync when changing the API.
 
 - **Reports**: the `report` extra uses **fpdf2** (not WeasyPrint). fpdf2 core fonts are latin-1, so
   `report_pdf.py` has an `_ascii()` map for ε/ω/τ/± etc., and `multi_cell` needs
-  `new_x="LMARGIN", new_y="NEXT"`.
+  `new_x="LMARGIN", new_y="NEXT"`. There are three renderers off the one `ReportData`
+  (`assemble_report`): `render_pdf`, `render_docx`, and `render_html` (self-contained, base64-embedded
+  figures, no deps); `services.generate_report` + the `/report?fmt=` route expose all three.
 - **scikit-learn / seaborn / statsmodels are intentionally NOT dependencies** — numpy (k·MAD),
   matplotlib, and direct AIC/BIC are the right, simpler tools. Don't add them.
 - **mypy --strict + numpy**: model `epsilon()` returns are wrapped in `np.asarray(..., dtype=

@@ -3,6 +3,8 @@
     uvicorn backend.app.main:app --port 8001 &
     (cd frontend && npm run dev) &
     python frontend/e2e/test_ui.py
+
+Walks the stepwise Analysis workflow: load → repeats → fit → KK → validation → reference → report.
 """
 
 import glob
@@ -15,53 +17,92 @@ meas = sorted(glob.glob(f"{ROOT}/data/h02s19m*.csv"))[:12]
 val = sorted(glob.glob(f"{ROOT}/data/h02v*.csv"))[:10]
 obs = []
 
+
+def step(page, name, wait_selector=None, timeout=60000):
+    """Click a stepper pill (accessible name includes its number, e.g. '2 Repeats')."""
+    page.get_by_role("button", name=name).first.click()
+    if wait_selector:
+        page.wait_for_selector(wait_selector, timeout=timeout)
+    page.wait_for_timeout(2000)  # let plots paint
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-    page = browser.new_page(viewport={"width": 1440, "height": 1600})
+    page = browser.new_page(viewport={"width": 1440, "height": 1800})
     page.goto("http://localhost:5173")
     page.wait_for_load_state("networkidle")
 
     # (1) header + tabs
     obs.append(("header 'dielectric'", page.locator("h1", has_text="dielectric").count() == 1))
-    obs.append(("tab Dielectric Analysis", page.get_by_role("button", name="Dielectric Analysis").count() == 1))
-    obs.append(("tab Uncertainty Budget", page.get_by_role("button", name="Uncertainty Budget").count() == 1))
+    obs.append(("tab Dielectric Analysis",
+                page.get_by_role("button", name="Dielectric Analysis").count() == 1))
 
-    # (2) Budget tab
+    # (2) Budget tab (unchanged sandbox)
     page.get_by_role("button", name="Uncertainty Budget").click()
-    page.wait_for_timeout(1500)
     page.wait_for_selector("text=combined standard uncertainty", timeout=8000)
-    obs.append(("budget table present", page.locator("text=combined standard uncertainty").count() >= 1))
-    largest = page.locator("text=largest:").first.inner_text()
-    obs.append((f"largest contributor badge = '{largest}'", "input/inversion" in largest))
-    page.screenshot(path="/tmp/diel_budget.png", full_page=True)
+    obs.append(("budget table present",
+                page.locator("text=combined standard uncertainty").count() >= 1))
 
-    # (3) Analysis tab
+    # (3) Analysis tab — step 1: Load
     page.get_by_role("button", name="Dielectric Analysis").click()
     page.wait_for_timeout(500)
     file_inputs = page.locator('input[type="file"]')
-    obs.append(("two file dropzones", file_inputs.count() == 2))
+    obs.append(("two file dropzones (measurement + validation)", file_inputs.count() == 2))
+
     file_inputs.nth(0).set_input_files(meas)
-    page.wait_for_timeout(1200)
+    page.wait_for_timeout(600)
+    obs.append(("staged file table", page.locator("text=Staged files").count() >= 1))
+    page.get_by_role("button", name="Load measurement set").click()
+    page.wait_for_selector("text=/\\d+\\/\\d+ repeats/", timeout=15000)
+    obs.append(("measurement set card", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 1))
+
     file_inputs.nth(1).set_input_files(val)
-    page.wait_for_timeout(1200)
-    # set cards rendered?
-    obs.append(("measurement set card shows repeats", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 1))
-    page.screenshot(path="/tmp/diel_analysis_setup.png", full_page=True)
+    page.wait_for_timeout(600)
+    page.get_by_role("button", name="Load validation set").click()
+    page.wait_for_timeout(1500)
+    page.screenshot(path="/tmp/diel_step1_load.png", full_page=True)
 
-    page.get_by_role("button", name="Run analysis").click()
-    # analysis runs the full pipeline; wait for the result panel
-    page.wait_for_selector("text=Sample:", timeout=60000)
-    page.wait_for_timeout(2500)  # let plots render
+    # (4) step 2: Repeat statistics
+    step(page, "Repeats")
+    obs.append(("repeats band plot", page.locator(".js-plotly-plot").count() >= 2))
+    obs.append(("distribution inspector", page.locator("text=Distribution inspector").count() >= 1))
+    page.screenshot(path="/tmp/diel_step2_repeats.png", full_page=True)
 
-    obs.append(("chosen model Cole-Cole + DC sigma", page.locator("text=Cole-Cole + DC").count() >= 1))
-    banner = page.locator("text=VALIDATED").first
-    banner_text = banner.inner_text() if banner.count() else "(no banner)"
-    obs.append((f"validation banner = '{banner_text[:60]}'", "VALIDATED" in banner_text and "NOT" not in banner_text))
-    obs.append(("Bode label", page.locator("text=Bode").count() >= 1))
-    obs.append(("Cole-Cole label", page.locator("text=Cole-Cole").count() >= 1))
+    # (5) step 3: Model fit (waits for the ranking table, which only renders once the fit returns)
+    step(page, "Model fit", wait_selector="text=ΔAICc")
+    obs.append(("ranking table", page.locator("text=ΔAICc").count() >= 1))
+    obs.append(("residual plot present", page.locator("text=Residuals").count() >= 1))
+    obs.append(("chosen model badge Cole-Cole + DC",
+                page.locator("span", has_text="Cole-Cole + DC").count() >= 1))
+    page.screenshot(path="/tmp/diel_step3_fit.png", full_page=True)
+
+    # (6) step 4: Kramers-Kronig
+    step(page, "Kramers-Kronig", wait_selector="text=KK-predicted vs measured")
+    obs.append(("KK predicted vs measured", page.locator("text=KK-predicted vs measured").count() >= 1))
+    obs.append(("KK consistent badge", page.locator("text=KK consistent").count() >= 1))
+    page.screenshot(path="/tmp/diel_step4_kk.png", full_page=True)
+
+    # (7) step 5: Validation
+    step(page, "Validation", wait_selector="text=QC set(s) passed")
+    banner_text = page.locator("text=QC set(s) passed").first.inner_text()
+    obs.append((f"validation banner = '{banner_text[:50]}'",
+                "VALIDATED" in banner_text and "NOT VALIDATED" not in banner_text))
+    obs.append(("saline sweep table", page.locator("text=Saline best-match sweep").count() >= 1))
+    page.screenshot(path="/tmp/diel_step5_validation.png", full_page=True)
+
+    # (8) step 6: Reference match
+    step(page, "Reference match", wait_selector="text=Per-frequency relative error")
+    obs.append(("closest materials", page.locator("text=Closest materials").count() >= 1))
+    obs.append(("per-frequency error plot",
+                page.locator("text=Per-frequency relative error").count() >= 1))
+    page.screenshot(path="/tmp/diel_step6_reference.png", full_page=True)
+
+    # (9) step 7: Report
+    step(page, "Report", wait_selector="text=Download HTML report")
     obs.append(("methods paragraph", page.locator("text=non-linear least squares").count() >= 1))
-    obs.append(("plotly svg rendered", page.locator(".plot-container, .js-plotly-plot").count() >= 2))
-    page.screenshot(path="/tmp/diel_analysis_results.png", full_page=True)
+    obs.append(("HTML report download",
+                page.get_by_role("button", name="Download HTML report").count() >= 1))
+    page.screenshot(path="/tmp/diel_step7_report.png", full_page=True)
 
     browser.close()
 

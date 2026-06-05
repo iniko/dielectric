@@ -2,9 +2,24 @@ import type {
   BudgetComponentIn,
   BudgetResult,
   CampaignAnalysis,
+  FitOut,
+  KKDetailOut,
   MaterialOut,
+  ReferenceMatchOut,
+  RepeatsOut,
+  SalineSweepOut,
   SetSummary,
 } from "./types";
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  return json(
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
 
 async function json<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
@@ -24,7 +39,7 @@ export async function getMaterials(): Promise<MaterialOut[]> {
 }
 
 export async function uploadSet(
-  files: FileList,
+  files: File[] | FileList,
   role: "measurement" | "validation",
   opts: { name: string; reference?: string; molarity?: number; temperature_c: number },
 ): Promise<SetSummary> {
@@ -66,7 +81,34 @@ export async function analyze(
   );
 }
 
-export function reportUrl(campaignId: string, sample: string, fmt: "pdf" | "docx"): string {
+export async function getRepeats(setId: string, frequenciesGhz: number[]): Promise<RepeatsOut> {
+  const q = frequenciesGhz.length ? `?frequencies=${frequenciesGhz.join(",")}` : "";
+  return json(await fetch(`/api/sets/${setId}/repeats${q}`));
+}
+
+export async function fitCampaign(
+  campaignId: string,
+  body: { model?: string | null; n_poles?: number | null; dc_sigma?: boolean | null },
+): Promise<FitOut> {
+  return postJson(`/api/campaigns/${campaignId}/fit`, body);
+}
+
+export async function getKK(campaignId: string): Promise<KKDetailOut> {
+  return json(await fetch(`/api/campaigns/${campaignId}/kk`));
+}
+
+export async function referenceMatch(
+  setId: string,
+  body: { reference: string; temperature_c: number; molarity?: number; salinity_psu?: number },
+): Promise<ReferenceMatchOut> {
+  return postJson(`/api/sets/${setId}/reference-match`, body);
+}
+
+export async function salineSweep(setId: string): Promise<SalineSweepOut> {
+  return postJson(`/api/sets/${setId}/saline-sweep`, {});
+}
+
+export function reportUrl(campaignId: string, sample: string, fmt: "pdf" | "docx" | "html"): string {
   return `/api/campaigns/${campaignId}/report?sample=${encodeURIComponent(sample)}&fmt=${fmt}`;
 }
 

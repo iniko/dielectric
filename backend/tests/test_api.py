@@ -117,3 +117,104 @@ def test_errors() -> None:
     assert client.post("/api/campaigns/nope/analyze", json={}).status_code == 404
     empty_budget = client.post("/api/budget", json={"nominal_value": 1.0, "components": []})
     assert empty_budget.status_code == 400
+
+
+# -- stepwise UX endpoints ----------------------------------------------------------------------
+
+
+def _campaign(measure_limit: int = 12, with_validation: bool = True) -> tuple[str, str, str]:
+    meas = _upload("h02s19m*.csv", "measurement", limit=measure_limit)
+    val_ids = []
+    val_id = ""
+    if with_validation:
+        val = _upload("h02v*.csv", "validation", limit=12, reference="saline", molarity="0.154")
+        val_ids = [val["id"]]
+        val_id = val["id"]
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [meas["id"]], "validation_set_ids": val_ids, "temperature_c": 25.0,
+    }).json()["id"]
+    return cid, meas["id"], val_id
+
+
+def test_repeats_step_band_and_distribution() -> None:
+    _cid, mid, _v = _campaign(with_validation=False)
+    resp = client.get(f"/api/sets/{mid}/repeats", params={"frequencies": "1,5,10"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    band = body["band"]
+    n = len(band["frequency_hz"])
+    assert n > 10
+    assert all(len(band[k]) == n for k in ("eps_real", "eps_real_lo", "eps_real_hi", "sigma"))
+    # the band brackets the mean
+    assert all(lo <= m <= hi for lo, m, hi in
+               zip(band["eps_real_lo"], band["eps_real"], band["eps_real_hi"], strict=True))
+    assert body["coverage_k"] > 0
+    assert len(body["distributions"]) == 3
+    # the distribution inspector shows every raw repeat (incl. any outlier), not just the kept ones
+    assert len(body["distributions"][0]["eps_real_samples"]) == body["n_repeats"]
+
+
+def test_fit_step_returns_ranking_and_residual() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    resp = client.post(f"/api/campaigns/{cid}/fit", json={"dc_sigma": True})
+    assert resp.status_code == 200, resp.text
+    res = resp.json()["results"][0]
+    assert "DC σ" in res["chosen_model"]
+    assert len(res["ranking"]) > 1
+    assert len(res["residual"]["frequency_hz"]) == len(res["residual"]["residual_eps_real"]) > 10
+    assert len(res["plot"]["fit_frequency_hz"]) > 0
+
+
+def test_fit_step_rejects_fixed_params() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    resp = client.post(f"/api/campaigns/{cid}/fit", json={"fixed_params": {"eps_inf": 5.0}})
+    assert resp.status_code == 400
+
+
+def test_kk_step_exposes_predicted_and_measured() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    body = client.get(f"/api/campaigns/{cid}/kk").json()
+    kk = body["results"][0]
+    n = len(kk["frequency_hz"])
+    assert len(kk["predicted_eps_real"]) == len(kk["measured_eps_real"]) == n
+    assert len(kk["relative_residual"]) == n
+    assert isinstance(kk["consistent"], bool)
+
+
+def test_reference_match_overlay() -> None:
+    _cid, mid, _v = _campaign(with_validation=False)
+    resp = client.post(f"/api/sets/{mid}/reference-match", json={
+        "reference": "muscle", "temperature_c": 37.0,
+    })
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["reference_label"]
+    ov = body["overlay"]
+    assert len(ov["frequency_hz"]) == len(ov["rel_error_pct"]) == len(ov["meas_eps_real"]) > 10
+    assert body["rms"] >= 0
+
+
+def test_saline_sweep_is_ranked() -> None:
+    _cid, _m, vid = _campaign(with_validation=True)
+    rows = client.post(f"/api/sets/{vid}/saline-sweep").json()["rows"]
+    assert len(rows) == 15  # 3 molarities × 5 temperatures
+    assert rows == sorted(rows, key=lambda r: r["rms"])  # best match first
+    # the h02 saline validation is closest to ~0.154 M
+    assert rows[0]["molarity"] == 0.154
+
+
+def test_html_report_is_self_contained() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    client.post(f"/api/campaigns/{cid}/analyze", json={}).raise_for_status()
+    resp = client.get(
+        f"/api/campaigns/{cid}/report", params={"sample": "measurement", "fmt": "html"}
+    )
+    assert resp.status_code == 200
+    text = resp.content.decode("utf-8")
+    assert text.startswith("<!doctype html>")
+    assert "data:image/png;base64," in text
+
+
+def test_unknown_set_404() -> None:
+    assert client.get("/api/sets/nope/repeats").status_code == 404
+    assert client.post("/api/sets/nope/saline-sweep").status_code == 404

@@ -20,6 +20,7 @@ from dielectric.reporting import (
     parameter_table_csv,
     parameter_table_latex,
     render_docx,
+    render_html,
     render_pdf,
     save_figure,
     to_bibtex,
@@ -142,7 +143,14 @@ def test_assemble_and_render_reports(tmp_path: Path) -> None:
     )
     docx_path = tmp_path / "r.docx"
     pdf_path = tmp_path / "r.pdf"
+    html_path = tmp_path / "r.html"
     render_docx(report, str(docx_path))
     render_pdf(report, str(pdf_path))
+    render_html(report, str(html_path))
     assert docx_path.stat().st_size > 5000
     assert pdf_path.stat().st_size > 2000
+    html = html_path.read_text(encoding="utf-8")
+    assert html.startswith("<!doctype html>")
+    assert "Test" in html  # the title
+    assert "data:image/png;base64," in html  # the figure is embedded, not linked
+    assert "<script" not in html.lower()  # self-contained, no external/dynamic content

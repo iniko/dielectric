@@ -15,11 +15,25 @@ from dielectric.verification import (
     compare_to_reference,
     find_closest_materials,
     kramers_kronig_check,
+    reference_overlay,
     validate_campaign,
     validate_set,
 )
 
 F = np.geomspace(1e8, 1e11, 120)
+
+
+def test_reference_overlay_self_match_is_near_zero() -> None:
+    """A spectrum sampled from a reference matches that reference with ~zero error."""
+    water = get("water", temperature_c=25.0)
+    target = Spectrum(F, np.asarray(water.model.epsilon(F)))
+    ov = reference_overlay(target, water, target_temperature_c=25.0)
+    assert ov.material == water.name
+    assert ov.frequency_hz.size == ov.rel_error_pct.size == ov.meas_eps_real.size
+    assert ov.rms < 1e-6
+    assert ov.mean_rel_error_pct < 1e-3
+    # the displayed loss is the conventional positive ε'' = -Im(ε*)
+    assert np.all(ov.meas_loss >= -1e-9)
 
 
 def test_kk_consistent_for_debye_pair() -> None:

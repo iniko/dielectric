@@ -92,17 +92,66 @@ def analyze(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.CampaignAn
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.post("/api/campaigns/{campaign_id}/fit", response_model=schemas.FitOut)
+def fit(campaign_id: str, req: schemas.FitRequest) -> schemas.FitOut:
+    if campaign_id not in STORE.campaigns:
+        raise HTTPException(404, "unknown campaign")
+    try:
+        return services.fit_campaign(campaign_id, req)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/campaigns/{campaign_id}/kk", response_model=schemas.KKDetailOut)
+def kk(campaign_id: str) -> schemas.KKDetailOut:
+    if campaign_id not in STORE.campaigns:
+        raise HTTPException(404, "unknown campaign")
+    return services.kk_campaign(campaign_id)
+
+
+@app.get("/api/sets/{set_id}/repeats", response_model=schemas.RepeatsOut)
+def repeats(set_id: str, frequencies: str | None = None) -> schemas.RepeatsOut:
+    try:
+        freqs = [float(x) for x in frequencies.split(",") if x.strip()] if frequencies else []
+    except ValueError as exc:
+        raise HTTPException(400, "frequencies must be a comma-separated list of GHz") from exc
+    try:
+        return services.repeats_for_set(set_id, freqs)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/sets/{set_id}/reference-match", response_model=schemas.ReferenceMatchOut)
+def reference_match(set_id: str, req: schemas.ReferenceMatchRequest) -> schemas.ReferenceMatchOut:
+    try:
+        return services.reference_match_for_set(set_id, req)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, f"could not resolve reference '{req.reference}': {exc}") from exc
+
+
+@app.post("/api/sets/{set_id}/saline-sweep", response_model=schemas.SalineSweepOut)
+def saline_sweep(set_id: str) -> schemas.SalineSweepOut:
+    try:
+        return services.saline_sweep_for_set(set_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @app.get("/api/campaigns/{campaign_id}/report")
 def report(campaign_id: str, sample: str, fmt: str = "pdf") -> FileResponse:
-    if fmt not in ("pdf", "docx"):
-        raise HTTPException(400, "fmt must be 'pdf' or 'docx'")
+    if fmt not in ("pdf", "docx", "html"):
+        raise HTTPException(400, "fmt must be 'pdf', 'docx', or 'html'")
     try:
         path = services.generate_report(campaign_id, sample, fmt)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
-    media = "application/pdf" if fmt == "pdf" else (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
+    media = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "html": "text/html",
+    }[fmt]
     return FileResponse(path, media_type=media, filename=f"{Path(sample).stem}_report.{fmt}")
 
 

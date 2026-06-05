@@ -18,6 +18,8 @@ class Store:
     validation_sets: dict[str, ValidationSet] = field(default_factory=dict)
     campaigns: dict[str, Campaign] = field(default_factory=dict)
     analyses: dict[str, object] = field(default_factory=dict)  # campaign_id -> CampaignAnalysis
+    # campaign_id -> {sample_id -> {"fit": ..., "spectrum": ..., ...}}
+    fits: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:12]

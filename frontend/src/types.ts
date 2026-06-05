@@ -103,6 +103,121 @@ export interface MaterialOut {
   temperature_c: number;
 }
 
+// ---- step endpoints (stepwise UX) ----
+
+export interface RepeatBand {
+  frequency_hz: number[];
+  eps_real: number[];
+  eps_real_lo: number[];
+  eps_real_hi: number[];
+  sigma: number[];
+  sigma_lo: number[];
+  sigma_hi: number[];
+}
+
+export interface RepeatDistributionOut {
+  frequency_hz: number;
+  eps_real_samples: number[];
+  eps_imag_samples: number[];
+  eps_real_mean: number;
+  eps_real_std: number;
+  eps_imag_mean: number;
+  eps_imag_std: number;
+  shapiro_p_real: number;
+  shapiro_p_imag: number;
+}
+
+export interface RepeatsOut {
+  set_id: string;
+  name: string;
+  n_repeats: number;
+  n_used: number;
+  excluded_indices: number[];
+  coverage_k: number;
+  band: RepeatBand;
+  distributions: RepeatDistributionOut[];
+}
+
+export interface ResidualSeries {
+  frequency_hz: number[];
+  residual_eps_real: number[];
+  residual_loss: number[];
+}
+
+export interface FitResultOut {
+  sample_id: string;
+  chosen_model: string;
+  overridden: boolean;
+  params: ParamOut[];
+  r_squared: number;
+  chi2_reduced: number;
+  aicc: number;
+  ranking: RankedOut[];
+  selection_warnings: string[];
+  plot: SpectrumPlot;
+  residual: ResidualSeries;
+}
+
+export interface FitOut {
+  campaign_id: string;
+  results: FitResultOut[];
+}
+
+export interface KKDetail {
+  sample_id: string;
+  frequency_hz: number[];
+  predicted_eps_real: number[];
+  measured_eps_real: number[];
+  relative_residual: number[];
+  residual_rms: number;
+  truncation_estimate: number;
+  consistent: boolean;
+  warnings: string[];
+}
+
+export interface KKDetailOut {
+  campaign_id: string;
+  results: KKDetail[];
+}
+
+export interface RefOverlay {
+  frequency_hz: number[];
+  meas_eps_real: number[];
+  meas_loss: number[];
+  ref_eps_real: number[];
+  ref_loss: number[];
+  rel_error_pct: number[];
+}
+
+export interface ReferenceMatchOut {
+  set_id: string;
+  reference_label: string;
+  confidence: string;
+  rms: number;
+  eps_real_rms: number;
+  loss_rms: number;
+  mean_rel_error_pct: number;
+  nrmse: number;
+  max_abs_d_eps_real: number;
+  max_abs_d_loss: number;
+  in_band_fraction: number;
+  temperature_delta_c: number | null;
+  notes: string[];
+  overlay: RefOverlay;
+}
+
+export interface SalineSweepRow {
+  molarity: number;
+  temperature_c: number;
+  rms: number;
+  eps_real_rms: number;
+}
+
+export interface SalineSweepOut {
+  set_id: string;
+  rows: SalineSweepRow[];
+}
+
 export interface BudgetComponentIn {
   name: string;
   standard_uncertainty: number;

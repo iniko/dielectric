@@ -9,6 +9,7 @@ from .manifest import ReproducibilityManifest
 from .methods import methods_paragraph
 from .report import ReportData, assemble_report
 from .report_docx import render_docx
+from .report_html import render_html
 from .report_pdf import render_pdf
 from .tables import (
     parameter_table_csv,
@@ -29,6 +30,7 @@ __all__ = [
     "parameter_table_csv",
     "parameter_table_latex",
     "render_docx",
+    "render_html",
     "render_pdf",
     "save_figure",
     "selection_table_csv",

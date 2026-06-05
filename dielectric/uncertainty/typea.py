@@ -13,8 +13,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..constants import EPSILON_0
 from ..spectrum import Spectrum, SpectrumMetadata
-from ..units import ComplexArray, FloatArray
+from ..units import ComplexArray, FloatArray, angular_frequency
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,109 @@ class TypeAResult:
     def combined_sem(self) -> ComplexArray:
         assert self.mean.sem is not None
         return self.mean.sem
+
+
+@dataclass(frozen=True)
+class TypeABand:
+    """Type A confidence band of a mean spectrum (mean ± k·SEM), in display quantities.
+
+    ``sigma`` is the effective conductivity σ_eff = -ω·ε₀·Im(ε*); its band follows from the SEM of
+    Im(ε*) by linear propagation. ``k`` is the coverage factor (1.96 ≈ 95% for many repeats).
+    """
+
+    frequency_hz: FloatArray
+    eps_real: FloatArray
+    eps_real_lo: FloatArray
+    eps_real_hi: FloatArray
+    sigma: FloatArray
+    sigma_lo: FloatArray
+    sigma_hi: FloatArray
+    coverage_k: float
+
+
+def confidence_band(result: TypeAResult, *, k: float = 1.96) -> TypeABand:
+    """Mean ± ``k``·SEM band for ε' and σ_eff from a :class:`TypeAResult`."""
+    mean = result.mean
+    if mean.sem is None:  # pragma: no cover - combine_repeats always sets sem
+        raise ValueError("the mean spectrum carries no SEM; cannot form a confidence band")
+    f = mean.frequency_hz
+    sem_re = np.real(mean.sem)
+    sem_im = np.imag(mean.sem)
+    eps_real = mean.eps_real
+    sigma = mean.effective_conductivity
+    d_sigma = k * angular_frequency(f) * EPSILON_0 * sem_im  # |∂σ/∂Im(ε)| · k·SEM
+    return TypeABand(
+        frequency_hz=f,
+        eps_real=eps_real,
+        eps_real_lo=eps_real - k * sem_re,
+        eps_real_hi=eps_real + k * sem_re,
+        sigma=sigma,
+        sigma_lo=sigma - d_sigma,
+        sigma_hi=sigma + d_sigma,
+        coverage_k=k,
+    )
+
+
+@dataclass(frozen=True)
+class RepeatDistribution:
+    """Per-repeat ε' and ε'' samples at one frequency, with mean/std and a normality p-value."""
+
+    frequency_hz: float
+    eps_real_samples: FloatArray
+    eps_imag_samples: FloatArray
+    eps_real_mean: float
+    eps_real_std: float
+    eps_imag_mean: float
+    eps_imag_std: float
+    shapiro_p_real: float  # NaN when fewer than 3 repeats
+    shapiro_p_imag: float
+
+
+def _shapiro_p(x: FloatArray) -> float:
+    if x.size < 3:
+        return float("nan")
+    from scipy.stats import shapiro
+
+    try:
+        return float(shapiro(x).pvalue)
+    except ValueError:  # pragma: no cover - e.g. all-identical samples
+        return float("nan")
+
+
+def repeat_distribution(
+    spectra: tuple[Spectrum, ...] | list[Spectrum],
+    frequencies_hz: tuple[float, ...] | list[float],
+) -> list[RepeatDistribution]:
+    """Gather the per-repeat ε' / ε'' samples at each requested frequency (nearest grid point).
+
+    For each frequency the closest measured grid point is used, and the across-repeat sample is
+    summarised with mean, std (ddof=1), and a Shapiro-Wilk normality p-value — the inputs a student
+    needs to judge whether the repeat scatter is Gaussian before quoting a Type A SEM.
+    """
+    spectra = tuple(spectra)
+    if len(spectra) < 1:
+        raise ValueError("need at least one repeat for a distribution")
+    f = _assert_shared_grid(spectra)
+    stack = np.array([s.epsilon for s in spectra])  # (n_repeats, n_freq)
+    out: list[RepeatDistribution] = []
+    for fq in frequencies_hz:
+        idx = int(np.argmin(np.abs(f - fq)))
+        re = np.real(stack[:, idx]).astype(np.float64)
+        im = np.imag(stack[:, idx]).astype(np.float64)
+        out.append(
+            RepeatDistribution(
+                frequency_hz=float(f[idx]),
+                eps_real_samples=re,
+                eps_imag_samples=im,
+                eps_real_mean=float(np.mean(re)),
+                eps_real_std=float(np.std(re, ddof=1)) if re.size > 1 else 0.0,
+                eps_imag_mean=float(np.mean(im)),
+                eps_imag_std=float(np.std(im, ddof=1)) if im.size > 1 else 0.0,
+                shapiro_p_real=_shapiro_p(re),
+                shapiro_p_imag=_shapiro_p(im),
+            )
+        )
+    return out
 
 
 def _assert_shared_grid(spectra: tuple[Spectrum, ...], *, rtol: float = 1e-6) -> FloatArray:

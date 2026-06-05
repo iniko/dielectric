@@ -7,12 +7,49 @@ import math
 import numpy as np
 import pytest
 
+from dielectric.models.multipole import MultiPoleRelaxation
+from dielectric.spectrum import Spectrum
 from dielectric.uncertainty import (
     UncertaintyComponent,
     coaxial_probe_permittivity_budget,
+    combine_repeats,
+    confidence_band,
     monte_carlo,
+    repeat_distribution,
 )
 from dielectric.uncertainty.gum import GUMBudget
+
+
+def _repeats(n: int = 10, noise: float = 0.05, seed: int = 0) -> tuple[Spectrum, ...]:
+    f = np.geomspace(2e8, 2e10, 64)
+    truth = MultiPoleRelaxation(5.0, ((52.0, 8e-12, 0.05),), sigma_dc=0.7)
+    base = truth.epsilon(f)
+    rng = np.random.default_rng(seed)
+    return tuple(
+        Spectrum(f, base + rng.normal(0, noise, f.size) + 1j * rng.normal(0, noise, f.size))
+        for _ in range(n)
+    )
+
+
+def test_confidence_band_brackets_the_mean() -> None:
+    ta = combine_repeats(_repeats())
+    band = confidence_band(ta, k=1.96)
+    assert band.coverage_k == 1.96
+    assert band.frequency_hz.size == ta.mean.frequency_hz.size
+    assert np.all(band.eps_real_lo <= band.eps_real)
+    assert np.all(band.eps_real <= band.eps_real_hi)
+    assert np.all(band.sigma_lo <= band.sigma)
+    assert np.all(band.eps_real_hi - band.eps_real_lo > 0)
+
+
+def test_repeat_distribution_summarises_per_frequency() -> None:
+    reps = _repeats(n=12)
+    dists = repeat_distribution(reps, [1e9, 5e9])
+    assert len(dists) == 2
+    d = dists[0]
+    assert d.eps_real_samples.size == 12
+    assert 0.0 <= d.shapiro_p_real <= 1.0
+    assert abs(d.frequency_hz - 1e9) / 1e9 < 0.1
 
 
 def _square(x: np.ndarray) -> float:
