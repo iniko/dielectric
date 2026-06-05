@@ -43,6 +43,10 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 # Greek/symbolic names are deliberate to match physics notation (memory: data-and-sign-convention).
 ignore = ["N802", "N803", "N806", "N815", "RUF001", "RUF002", "RUF003"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI uses File()/Form()/Depends() calls in argument defaults by design.
+"backend/app/main.py" = ["B008"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true
