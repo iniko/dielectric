@@ -134,6 +134,25 @@ def test_degenerate_fit_not_recommended() -> None:
     assert any(rf.degenerate for rf in sel.ranking if "MultiPole" in rf.label)
 
 
+def test_small_sample_stays_in_family_not_worse_model() -> None:
+    """With few repeats the recommendation must stay a conductivity model (flagged underdetermined),
+    never fall back to a qualitatively worse fit (e.g. Jonscher)."""
+    import glob
+    import warnings as _w
+
+    from dielectric.io.campaign import MeasurementSet
+    from dielectric.io.csv_loader import load_agilent_85070
+
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+        paths = sorted(glob.glob("data/h02s19m*.csv"))[:5]
+        ms = MeasurementSet("s", tuple(load_agilent_85070(p) for p in paths), 25.0)
+        sel = select_model(ms.type_a().mean)
+    assert "DC σ" in sel.recommended.label  # still the conductive family, not Jonscher/Debye
+    assert sel.recommended.degenerate  # honestly flagged as underdetermined
+    assert any("underdetermined" in w for w in sel.warnings)
+
+
 def test_generic_fit_accepts_explicit_p0() -> None:
     truth = Debye(5.0, 70.0, 8e-12)
     s = Spectrum(F, truth.epsilon(F))

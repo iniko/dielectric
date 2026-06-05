@@ -35,6 +35,11 @@ PARSIMONY_DELTA_AICC = 2.0
 #: slow relaxation pole absorbing the DC-conduction tail, collapsing σ to ~0 with a huge error bar).
 DEGENERACY_THRESHOLD = 1.0
 
+#: A degenerate model is only rejected for a non-degenerate one if the latter fits *comparably well*
+#: (R² within this tolerance of the best fit). Otherwise we never trade a good-but-underdetermined
+#: fit for a qualitatively worse one (e.g. a poor Jonscher fit when few repeats are averaged).
+R2_RECOMMEND_TOL = 0.01
+
 #: Per-parameter scale used to regularize relative uncertainty so a legitimately-near-zero parameter
 #: (e.g. α→0 in the Debye limit) is not falsely flagged.
 _PARAM_SCALE: dict[str, float] = {
@@ -200,21 +205,26 @@ def select_model(
         degenerate = mru > DEGENERACY_THRESHOLD
         ranking.append(RankedFit(label, res, res.aicc - best_aicc, overparam, degenerate, mru))
 
-    # Recommendation: only among *acceptable* fits — not over-parameterized and not degenerate
-    # (identifiable parameters). Among those, re-reference ΔAICc to the best acceptable fit and pick
-    # the most parsimonious within the parsimony band, so we never chase a lower AICc into a
-    # physically meaningless fit (e.g. a collapsed σ). Fall back to all fits only if none qualify.
-    acceptable = [rf for rf in ranking if not rf.overparameterized and not rf.degenerate]
-    pool = acceptable or ranking
+    # Recommendation. Restrict to models that describe the data comparably well (R² within
+    # R2_RECOMMEND_TOL of the best non-over-parameterized fit) — this excludes qualitatively worse
+    # models like a poor Jonscher fit. Among those, prefer identifiable (non-degenerate) ones; only
+    # if none are identifiable do we keep the well-fitting-but-underdetermined set (and warn). Then
+    # take the most parsimonious within the AICc parsimony band. This avoids two failure modes:
+    # chasing a lower AICc into a collapsed-σ fit, and abandoning the right physical family for a
+    # much worse fit just because its few parameters happen to be identifiable.
+    non_over = [rf for rf in ranking if not rf.overparameterized] or list(ranking)
+    best_r2 = max(rf.result.r_squared for rf in non_over)
+    good_fit = [rf for rf in non_over if rf.result.r_squared >= best_r2 - R2_RECOMMEND_TOL]
+    identifiable = [rf for rf in good_fit if not rf.degenerate]
+    pool = identifiable or good_fit
     best_pool_aicc = min(rf.result.aicc for rf in pool)
     within = [rf for rf in pool if rf.result.aicc - best_pool_aicc <= PARSIMONY_DELTA_AICC]
-    recommended = min(within, key=lambda rf: rf.result.n_params) if within else min(
-        pool, key=lambda rf: rf.result.aicc
-    )
-    if not acceptable:
+    recommended = min(within or pool, key=lambda rf: (rf.result.n_params, rf.result.aicc))
+    if not identifiable:
         warns.append(
-            "every candidate is over-parameterized or has unidentifiable parameters; the "
-            "recommendation is the least-bad fit — inspect parameter uncertainties first."
+            "every well-fitting candidate has unidentifiable parameters (often too few repeats or "
+            "too narrow a band); the recommendation fits well but is underdetermined — inspect the "
+            "parameter uncertainties before trusting it."
         )
 
     for rf in ranking:

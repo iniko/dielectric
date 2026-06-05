@@ -56,6 +56,23 @@ The generated methods paragraph is paste-ready:
 
 ---
 
+## Web app (FastAPI + React)
+
+A thin UI over the library — two workflows: **Dielectric Analysis** (upload any number of
+measurement and validation sets → fit → verify → report) and an **Uncertainty Budget** sandbox
+(live GUM calculation, no upload). The web layer contains no science; it calls the same validated
+library.
+
+```bash
+pip install -e ".[web,report]"
+uvicorn backend.app.main:app --port 8001          # backend (8000 is taken on some machines)
+cd frontend && npm install && npm run dev          # frontend on http://localhost:5173 (proxies /api)
+```
+
+Then open http://localhost:5173, drop the bundled `data/h02s19m*.csv` into *Measurement sets* and
+`data/h02v*.csv` into *Validation sets* (reference: saline), and click **Run analysis**. An E2E
+smoke test lives at `frontend/e2e/test_ui.py` (Playwright).
+
 ## Library quickstart
 
 ```python

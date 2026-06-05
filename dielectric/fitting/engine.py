@@ -90,6 +90,11 @@ def fit(
         floor_im = np.median(sigma_im[sigma_im > 0]) if np.any(sigma_im > 0) else 1.0
         sigma_re = np.where(sigma_re > 0, sigma_re, floor_re)
         sigma_im = np.where(sigma_im > 0, sigma_im, floor_im)
+        # Cap the weight dynamic range: with few repeats the SEM is itself noisy and a couple of
+        # coincidentally-tight points get a near-zero σ that would dominate weighted χ² and
+        # destabilise model selection. Floor each σ at 10% of its component median (≤10× weighting).
+        sigma_re = np.maximum(sigma_re, 0.1 * float(np.median(sigma_re)))
+        sigma_im = np.maximum(sigma_im, 0.1 * float(np.median(sigma_im)))
     else:
         sigma_re = np.ones_like(f)
         sigma_im = np.ones_like(f)
