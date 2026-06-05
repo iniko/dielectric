@@ -73,3 +73,24 @@ def test_input_uncertainty_injection_increases_budget() -> None:
 def test_relative_input_component_value() -> None:
     c = UncertaintyComponent.relative_input("inv", 0.03, 58.0)
     assert c.standard_uncertainty == pytest.approx(0.03 * 58.0)
+
+
+def test_gum_table_and_expanded_uncertainty() -> None:
+    budget = coaxial_probe_permittivity_budget(
+        58.0, type_a_std=0.67, type_a_dof=13, fit_std=1.4,
+        temperature_sensitivity=-0.36, temperature_half_width_c=2.0, input_inversion_relative=0.03,
+    )
+    table = budget.table()
+    assert "combined standard uncertainty" in table
+    assert "input/inversion" in table
+    assert "temperature" in table
+    # expanded uncertainty exceeds the combined standard uncertainty (k > 1)
+    assert budget.expanded_uncertainty(0.95) > budget.combined_standard_uncertainty
+    assert 0 < budget.relative_expanded < 1
+
+
+def test_gum_large_dof_coverage_factor_near_two() -> None:
+    comps = (UncertaintyComponent("b", 1.0),)  # all Type B → infinite dof
+    budget = GUMBudget("x", 10.0, comps)
+    assert budget.effective_dof == math.inf
+    assert budget.coverage_factor(0.95) == pytest.approx(1.96, abs=0.02)

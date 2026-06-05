@@ -28,6 +28,14 @@ def _load_glob(pattern: str, loader: Loader) -> tuple[tuple[Spectrum, ...], tupl
     return spectra, tuple(Path(p).name for p in paths)
 
 
+def _default_id(pattern: str) -> str:
+    """A filesystem-safe id from a glob pattern (strip wildcard metacharacters)."""
+    stem = Path(pattern).stem
+    for ch in "*?[]":
+        stem = stem.replace(ch, "")
+    return stem.strip("_-") or "set"
+
+
 @dataclass(frozen=True)
 class MeasurementSet:
     """A repeatability group: repeat spectra of one sample."""
@@ -47,7 +55,7 @@ class MeasurementSet:
         temperature_c: float | None = None,
     ) -> MeasurementSet:
         spectra, names = _load_glob(pattern, loader)
-        sid = sample_id or Path(pattern).stem
+        sid = sample_id or _default_id(pattern)
         return cls(sid, spectra, temperature_c, names)
 
     @property
@@ -91,7 +99,7 @@ class ValidationSet:
         temperature_c: float | None = None,
     ) -> ValidationSet:
         spectra, names = _load_glob(pattern, loader)
-        sid = sample_id or Path(pattern).stem
+        sid = sample_id or _default_id(pattern)
         return cls(sid, spectra, reference, reference_kwargs or {}, temperature_c, names)
 
     @property

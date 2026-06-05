@@ -72,19 +72,29 @@ def methods_paragraph(
         f"(R² = {fit.r_squared:.4f}, reduced χ² = {fit.chi2_reduced:.2g})."
     )
 
-    # 3. Model selection.
+    # 3. Model selection — report the margin over the next *acceptable* (identifiable) candidate,
+    # not the overall AICc-minimum, which may be a rejected degenerate fit.
     if selection is not None:
         n_cand = len(selection.ranking)
-        runner = next((rf for rf in selection.ranking if rf.label != selection.chosen.label), None)
-        delta = f"; ΔAICc to the next candidate was {runner.delta_aicc:.1f}" if runner else ""
+        acceptable = sorted(
+            (rf for rf in selection.ranking
+             if not rf.overparameterized and not rf.degenerate),
+            key=lambda rf: rf.result.aicc,
+        )
+        runner = next((rf for rf in acceptable if rf.label != selection.chosen.label), None)
+        margin = ""
+        if runner is not None:
+            d = runner.result.aicc - selection.chosen.result.aicc
+            margin = (
+                f"; it was preferred over the next identifiable model "
+                f"({runner.label}) by ΔAICc = {d:.1f}"
+            )
         how = (
             "selected by minimum corrected-AIC (AICc) with a parsimony and identifiability check"
             if not selection.overridden
             else "chosen by the analyst (overriding the AICc recommendation)"
         )
-        sentences.append(
-            f"The model was {how} among {n_cand} candidate models{delta}."
-        )
+        sentences.append(f"The model was {how} among {n_cand} candidate models{margin}.")
 
     # 4. Kramers-Kronig.
     if kk is not None:

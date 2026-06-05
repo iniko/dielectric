@@ -20,3 +20,6 @@ htmlcov/
 !docs/**/*.png
 out/
 reports_out/
+
+# generated analysis outputs
+out/
