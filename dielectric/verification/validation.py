@@ -98,7 +98,7 @@ def validate_set(
     if material.confidence.value == "VERIFY":
         notes.append("reference is VERIFY-confidence; pass/fail margin inherits that uncertainty")
     if frac < 1.0:
-        notes.append(f"{(1 - frac) * 100:.0f}% of points outside the reference band; QC uses overlap")
+        notes.append(f"{(1 - frac) * 100:.0f}% of points outside reference band; QC uses overlap")
 
     passed = eps_real_rms <= tol_eps and sigma_rel <= tol_sigma
     return ValidationVerdict(
