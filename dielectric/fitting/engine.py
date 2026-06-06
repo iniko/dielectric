@@ -186,6 +186,9 @@ def fit(
     r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
     log_params = tuple(n for n, lf in zip(names, log_flags, strict=True) if lf)
+    # The per-point σ the fit weighted by (floored Type A SEM), packed as σ_re + jσ_im; None when
+    # unweighted. Σ|resid/σ|² over the stacked real/imag residuals equals the reported χ².
+    sigma_used = (sigma_re + 1j * sigma_im).astype(np.complex128) if use_weights else None
 
     return FitResult(
         model=fitted,
@@ -198,6 +201,7 @@ def fit(
         dof=dof,
         n_data=n_data,
         weighted=use_weights,
+        sigma_used=sigma_used,
         r_squared=r_squared,
         success=bool(best.success),
         message=str(best.message),

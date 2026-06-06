@@ -35,12 +35,30 @@ class FitResult:
     log_scaled_params: tuple[str, ...] = ()
     fit_settings: dict[str, object] = field(default_factory=dict)
     data_hash: str | None = None
+    # Per-point σ the fit actually weighted by (real part = σ for ε', imag = σ for ε''); None when
+    # the fit was unweighted. Lets callers form standardized residuals whose Σ(·²) == χ².
+    sigma_used: ComplexArray | None = None
 
     # -- goodness of fit ------------------------------------------------------------------------
 
     @property
     def n_params(self) -> int:
         return self.model.n_params
+
+    @property
+    def standardized_residuals(self) -> ComplexArray:
+        """Residuals divided by the per-point σ used in the fit (dimensionless 'pulls').
+
+        Re/Im parts are each scaled by their own σ; Σ|standardized|² equals the weighted χ². When
+        the fit was unweighted (no measurement σ), the raw residuals are returned unchanged.
+        """
+        if self.sigma_used is None:
+            return self.residuals
+        out: ComplexArray = (
+            np.real(self.residuals) / np.real(self.sigma_used)
+            + 1j * np.imag(self.residuals) / np.imag(self.sigma_used)
+        )
+        return out
 
     @property
     def chi2_reduced(self) -> float:

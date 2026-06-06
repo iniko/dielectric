@@ -181,6 +181,8 @@ export interface ResidualSeries {
   frequency_hz: number[];
   residual_eps_real: number[];
   residual_loss: number[];
+  norm_eps_real: number[];
+  norm_loss: number[];
 }
 
 export interface FitResultOut {

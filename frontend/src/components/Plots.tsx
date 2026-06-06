@@ -211,38 +211,69 @@ export function KKPlot({ kk }: { kk: KKDetail }) {
   );
 }
 
-// Fit residuals Δε′ and Δε″ (model − data) vs frequency, with a zero reference line.
+// Fit residuals vs frequency. Two views:
+//  - normalized (default): standardized residuals (raw ÷ per-point σ), dimensionless "pulls" sharing
+//    one axis, with ±1σ/±2σ guide bands — the weighted-fit diagnostic (Σ pull² = χ²).
+//  - raw: the physical residuals on a dual axis with units (Δε′ left; Δε″ or Δσ right).
 export function ResidualPlot({
   residual,
   mode = "loss",
+  normalized = true,
 }: {
   residual: ResidualSeries;
   mode?: LossMode;
+  normalized?: boolean;
 }) {
-  const lossyResid = asLossy(residual.residual_loss, residual.frequency_hz, mode);
+  const f = residual.frequency_hz;
+  if (normalized) {
+    const band = (y0: number, y1: number, fill: string) => ({
+      type: "rect" as const, xref: "paper" as const, x0: 0, x1: 1,
+      yref: "y" as const, y0, y1, fillcolor: fill, line: { width: 0 }, layer: "below" as const,
+    });
+    const line2 = (y: number) => ({
+      type: "line" as const, xref: "paper" as const, x0: 0, x1: 1,
+      yref: "y" as const, y0: y, y1: y, line: { color: "#64748b", width: 1, dash: "dot" as const },
+    });
+    return (
+      <Plot
+        data={[
+          { x: f, y: residual.norm_eps_real, mode: "markers", name: "ε′ pull",
+            marker: { color: SIGNAL, size: 5 } },
+          { x: f, y: residual.norm_loss, mode: "markers", name: "ε″ pull",
+            marker: { color: VIOLET, size: 5 } },
+        ]}
+        layout={{
+          ...baseLayout,
+          shapes: [band(-1, 1, "rgba(45,212,191,0.10)"), line2(2), line2(-2)],
+          xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+          yaxis: {
+            title: { text: "normalized residual (units of σ)" },
+            gridcolor: GRID, zeroline: true, zerolinecolor: "#475569",
+          },
+        }}
+        config={config}
+        style={{ width: "100%", height: PLOT_H }}
+        useResizeHandler
+      />
+    );
+  }
+  const lossyResid = asLossy(residual.residual_loss, f, mode);
   return (
     <Plot
       data={[
-        {
-          x: residual.frequency_hz,
-          y: residual.residual_eps_real,
-          mode: "markers",
-          name: "Δε′",
-          marker: { color: SIGNAL, size: 5 },
-        },
-        {
-          x: residual.frequency_hz,
-          y: lossyResid,
-          mode: "markers",
-          name: mode === "sigma" ? "Δσ" : "Δε″",
-          marker: { color: VIOLET, size: 5 },
-        },
+        { x: f, y: residual.residual_eps_real, mode: "markers", name: "Δε′",
+          marker: { color: SIGNAL, size: 5 } },
+        { x: f, y: lossyResid, mode: "markers", name: mode === "sigma" ? "Δσ" : "Δε″",
+          yaxis: "y2", marker: { color: VIOLET, size: 5 } },
       ]}
       layout={{
         ...baseLayout,
         xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
-        yaxis: { title: { text: "residual (model − data)" }, gridcolor: GRID, zeroline: true,
-          zerolinecolor: "#475569" },
+        yaxis: { title: { text: "Δε′" }, gridcolor: GRID, zeroline: true, zerolinecolor: "#475569" },
+        yaxis2: {
+          title: { text: mode === "sigma" ? "Δσ (S/m)" : "Δε″" },
+          overlaying: "y", side: "right", showgrid: false, zeroline: false,
+        },
       }}
       config={config}
       style={{ width: "100%", height: PLOT_H }}

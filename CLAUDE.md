@@ -22,7 +22,7 @@ Use the project venv (`.venv/bin/...`). Install: `pip install -e ".[dev,report,h
 # Library gates (must all pass before committing)
 .venv/bin/ruff check .                      # lints the WHOLE repo (see exclusions in pyproject)
 .venv/bin/mypy dielectric                   # strict
-.venv/bin/python -m pytest                  # 95 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
+.venv/bin/python -m pytest                  # 97 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
 .venv/bin/python -m pytest tests/test_fitting.py::test_conductivity_recovered   # single test
 
 # Backend
@@ -79,7 +79,10 @@ is the rigor failure, not the algorithm.
 
 **Fitting (`fitting/`):** `engine.fit` minimises stacked `[Re(resid), Im(resid)]`, optimises τ in
 **log10 space** (mapping covariance back via the delta method) — see the sign/log notes below —
-weights by the Type A SEM, and runs a small multistart. `selection.select_model` ranks candidates by
+weights by the Type A SEM, and runs a small multistart. It stores the per-point σ it weighted by on
+`FitResult.sigma_used`, so `FitResult.standardized_residuals` (raw ÷ σ) are dimensionless "pulls" with
+`Σ(pull²) == χ²` — the fit step plots these (with ±1σ/±2σ bands) by default, with a toggle to the raw
+dual-axis (Δε′ / Δε″|Δσ) view. `selection.select_model` ranks candidates by
 **AICc/BIC on N = 2·n_freq**, then recommends the most parsimonious model that (a) fits comparably
 well (R² within tol) and (b) is *identifiable* — it flags `degenerate` fits (a parameter with huge
 relative uncertainty, e.g. a slow pole absorbing the DC-conduction tail) and `overparam` fits, and

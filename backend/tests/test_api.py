@@ -162,7 +162,11 @@ def test_fit_step_returns_ranking_and_residual() -> None:
     res = resp.json()["results"][0]
     assert "DC σ" in res["chosen_model"]
     assert len(res["ranking"]) > 1
-    assert len(res["residual"]["frequency_hz"]) == len(res["residual"]["residual_eps_real"]) > 10
+    resid = res["residual"]
+    n = len(resid["frequency_hz"])
+    assert n == len(resid["residual_eps_real"]) > 10
+    # normalized (standardized) residuals are present alongside the raw ones
+    assert len(resid["norm_eps_real"]) == len(resid["norm_loss"]) == n
     assert len(res["plot"]["fit_frequency_hz"]) > 0
 
 

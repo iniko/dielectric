@@ -90,7 +90,12 @@ with sync_playwright() as p:
     # (5) step 3: Model fit (waits for the ranking table, which only renders once the fit returns)
     step(page, "Model fit", wait_selector="text=ΔAICc")
     obs.append(("ranking table", page.locator("text=ΔAICc").count() >= 1))
-    obs.append(("residual plot present", page.locator("text=Residuals").count() >= 1))
+    obs.append(("residuals normalized by default",
+                page.locator("text=Standardized residuals").count() >= 1))
+    obs.append(("residual view toggle", page.get_by_role("button", name="normalized").count() >= 1))
+    page.get_by_role("button", name="raw", exact=True).first.click()  # switch to raw dual-axis
+    page.wait_for_timeout(800)
+    obs.append(("raw residual view selectable", page.locator(".js-plotly-plot").count() >= 1))
     obs.append(("chosen model badge Cole-Cole + DC",
                 page.locator("span", has_text="Cole-Cole + DC").count() >= 1))
     page.screenshot(path="/tmp/diel_step3_fit.png", full_page=True)

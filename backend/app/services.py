@@ -225,10 +225,13 @@ def _ranking_out(sel: ModelSelectionResult) -> list[schemas.RankedOut]:
 def _residual_series(fit: FitResult) -> schemas.ResidualSeries:
     f = fit.frequency_hz
     resid = fit.residuals  # ε_model − ε_data (internal convention)
+    sr = fit.standardized_residuals  # raw ÷ per-point σ (dimensionless pulls)
     return schemas.ResidualSeries(
         frequency_hz=f.tolist(),
         residual_eps_real=np.real(resid).tolist(),
         residual_loss=(-np.imag(resid)).tolist(),  # loss_model − loss_data (positive-loss)
+        norm_eps_real=np.real(sr).tolist(),
+        norm_loss=(-np.imag(sr)).tolist(),
     )
 
 

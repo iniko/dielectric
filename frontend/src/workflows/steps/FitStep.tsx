@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { FitResultOut } from "../../types";
 import { Badge, Card, Field, Input, Stat } from "../../components/ui";
 import { BodePlot, ColeColePlot, ResidualPlot } from "../../components/Plots";
@@ -96,6 +97,7 @@ export default function FitStep() {
 
 function FitPanel({ r }: { r: FitResultOut }) {
   const { lossMode } = usePreferences();
+  const [residNorm, setResidNorm] = useState(true);
   return (
     <Card
       title={`Sample: ${r.sample_id}`}
@@ -117,8 +119,35 @@ function FitPanel({ r }: { r: FitResultOut }) {
       </div>
 
       <div className="mt-4">
-        <PanelLabel>Residuals (model − data)</PanelLabel>
-        <ResidualPlot residual={r.residual} mode={lossMode} />
+        <div className="mb-2 flex items-center justify-between">
+          <PanelLabel>Residuals</PanelLabel>
+          <div className="flex gap-0.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-ink-900)] p-0.5">
+            {[
+              { k: true, label: "normalized" },
+              { k: false, label: "raw" },
+            ].map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                onClick={() => setResidNorm(o.k)}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                  residNorm === o.k
+                    ? "bg-[var(--color-signal)] text-ink-950"
+                    : "text-slate-400 hover:text-slate-100"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResidualPlot residual={r.residual} mode={lossMode} normalized={residNorm} />
+        {residNorm && (
+          <p className="mt-1 text-xs text-slate-500">
+            Standardized residuals (residual ÷ per-point Type A σ); a good weighted fit scatters within
+            the ±2σ band, and Σ(pull²) equals the reduced χ² shown above × dof.
+          </p>
+        )}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">

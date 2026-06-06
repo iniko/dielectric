@@ -219,6 +219,9 @@ class ResidualSeries(BaseModel):
     frequency_hz: list[float]
     residual_eps_real: list[float]  # Re(ε_model − ε_data)
     residual_loss: list[float]  # (−Im ε_model) − (−Im ε_data): positive-loss residual
+    # standardized (dimensionless) residuals = raw ÷ per-point Type A σ; Σ(·²) == χ²
+    norm_eps_real: list[float]
+    norm_loss: list[float]
 
 
 class FitResultOut(BaseModel):

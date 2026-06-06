@@ -23,6 +23,31 @@ from dielectric.spectrum import Spectrum
 F = np.geomspace(2e8, 2e10, 101)
 
 
+def test_standardized_residuals_sum_to_chi2() -> None:
+    """Pulls (residual ÷ per-point σ) must satisfy Σ|pull|² == χ² for a weighted fit."""
+    truth = MultiPoleRelaxation(5.0, ((52.0, 8e-12, 0.05),), sigma_dc=0.7)
+    rng = np.random.default_rng(0)
+    base = truth.epsilon(F)
+    reps = tuple(
+        Spectrum(F, base + rng.normal(0, 0.05, F.size) + 1j * rng.normal(0, 0.05, F.size))
+        for _ in range(10)
+    )
+    from dielectric.uncertainty import combine_repeats
+
+    fit_res = fit_cole_cole_conductivity(combine_repeats(reps).mean)
+    assert fit_res.weighted and fit_res.sigma_used is not None
+    sr = fit_res.standardized_residuals
+    ssq = float(np.sum(np.real(sr) ** 2) + np.sum(np.imag(sr) ** 2))
+    assert ssq == pytest.approx(fit_res.chi2, rel=1e-9)
+
+
+def test_unweighted_fit_has_no_sigma_used() -> None:
+    truth = Debye(5.0, 70.0, 8e-12)
+    r = fit(Spectrum(F, truth.epsilon(F)), Debye(4.0, 60.0, 5e-12), weighted=False)
+    assert r.sigma_used is None
+    assert np.allclose(r.standardized_residuals, r.residuals)  # falls back to raw
+
+
 def test_debye_roundtrip_recovers_log_tau() -> None:
     """The memory gotcha: τ must be recovered exactly on noise-free data via log-scaling."""
     truth = Debye(5.0, 70.0, 8e-12)
