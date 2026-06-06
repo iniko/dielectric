@@ -7,6 +7,7 @@ export interface SetSummary {
   n_repeats: number;
   n_used: number;
   excluded_indices: number[];
+  excluded_filenames: string[];
   band_ghz: [number, number];
   eps_real_range: [number, number];
   sigma_low_s_per_m: number;
@@ -127,6 +128,41 @@ export interface RepeatDistributionOut {
   shapiro_p_imag: number;
 }
 
+export interface RepeatDetail {
+  index: number;
+  filename: string;
+  zscore: number;
+  kept: boolean;
+  reason: string;
+}
+
+export interface ScreeningInfo {
+  outlier_k: number | null;
+  n_total: number;
+  n_used: number;
+  n_excluded: number;
+  manual_exclude: number[];
+  manual_keep: number[];
+  method: string;
+  citation: string;
+}
+
+export interface ScreeningImpact {
+  frequency_ref_hz: number;
+  eps_real_with: number;
+  eps_real_without: number;
+  sigma_with: number;
+  sigma_without: number;
+  max_abs_d_eps_real: number;
+  max_abs_d_sigma: number;
+}
+
+export interface ScreeningRequest {
+  outlier_k: number | null;
+  manual_exclude: number[];
+  manual_keep: number[];
+}
+
 export interface RepeatsOut {
   set_id: string;
   name: string;
@@ -136,6 +172,9 @@ export interface RepeatsOut {
   coverage_k: number;
   band: RepeatBand;
   distributions: RepeatDistributionOut[];
+  repeats: RepeatDetail[];
+  screening: ScreeningInfo | null;
+  impact: ScreeningImpact | null;
 }
 
 export interface ResidualSeries {

@@ -8,17 +8,24 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from dielectric.fitting import fit_cole_cole, select_model
+from dielectric.comparison import compare_spectra
+from dielectric.fitting import fit_cole_cole, fit_cole_cole_conductivity, select_model
 from dielectric.models.multipole import MultiPoleRelaxation
 from dielectric.reporting import (
     ReproducibilityManifest,
+    assemble_comparison_report,
     assemble_report,
     bode_figure,
     cole_cole_figure,
+    comparison_overlay_figure,
+    difference_figure,
     format_measurement,
     methods_paragraph,
     parameter_table_csv,
     parameter_table_latex,
+    render_comparison_docx,
+    render_comparison_html,
+    render_comparison_pdf,
     render_docx,
     render_html,
     render_pdf,
@@ -26,6 +33,7 @@ from dielectric.reporting import (
     to_bibtex,
 )
 from dielectric.spectrum import Spectrum
+from dielectric.uncertainty import combine_repeats
 
 F = np.geomspace(2e8, 2e10, 101)
 
@@ -129,6 +137,62 @@ def test_figures_render_and_save(tmp_path: Path) -> None:
 
 
 # -- end-to-end report -------------------------------------------------------------------------
+
+
+def _comparison_batch(eps_s: float, seed: int):
+    truth = MultiPoleRelaxation(5.0, ((eps_s - 5.0, 8e-12, 0.05),), sigma_dc=0.7)
+    rng = np.random.default_rng(seed)
+    base = truth.epsilon(F)
+    reps = tuple(
+        Spectrum(F, base + rng.normal(0, 0.03, F.size) + 1j * rng.normal(0, 0.03, F.size))
+        for _ in range(8)
+    )
+    ta = combine_repeats(reps)
+    return ta, fit_cole_cole_conductivity(ta.mean)
+
+
+def test_comparison_report_assembles_and_renders(tmp_path: Path) -> None:
+    ta_a, fit_a = _comparison_batch(70.0, seed=1)
+    ta_b, fit_b = _comparison_batch(57.0, seed=2)
+    batches = [("normal", fit_a, ta_a), ("diseased", fit_b, ta_b)]
+
+    over = tmp_path / "overlay.png"
+    save_figure(comparison_overlay_figure([(lbl, ta.mean) for lbl, _f, ta in batches]), str(over))
+    diff = tmp_path / "diff.png"
+    save_figure(difference_figure(compare_spectra(ta_b.mean, ta_a.mean)), str(diff))
+
+    manifest = ReproducibilityManifest.from_fit(fit_a, timestamp="2026-06-06T00:00:00Z")
+    report = assemble_comparison_report(
+        title="Compare", baseline_label="normal", batches=batches, manifest=manifest,
+        figure_paths=(str(over), str(diff)),
+    )
+    assert report.baseline == "normal"
+    assert report.batch_header == ("parameter", "normal", "diseased")
+    assert len(report.diffs) == 1
+    assert "separates over" in report.diffs[0].verdict
+
+    pdf_path, docx_path, html_path = tmp_path / "c.pdf", tmp_path / "c.docx", tmp_path / "c.html"
+    render_comparison_pdf(report, str(pdf_path))
+    render_comparison_docx(report, str(docx_path))
+    render_comparison_html(report, str(html_path))
+    assert pdf_path.stat().st_size > 2000
+    assert docx_path.stat().st_size > 5000
+    html = html_path.read_text(encoding="utf-8")
+    assert html.startswith("<!doctype html>") and "data:image/png;base64," in html
+    assert "diseased" in html
+
+
+def test_methods_paragraph_discloses_exclusion() -> None:
+    _s, fit = _fit()
+    disclosed = methods_paragraph(
+        fit, n_repeats=11, n_repeats_total=12, n_excluded=1, outlier_k=3.5, band_ghz=(0.2, 20.0)
+    )
+    assert "excluding 1 of 12" in disclosed
+    assert "Hampel" in disclosed and "k = 3.5" in disclosed
+    kept_all = methods_paragraph(
+        fit, n_repeats=12, n_repeats_total=12, n_excluded=0, outlier_k=None, band_ghz=(0.2, 20.0)
+    )
+    assert "no outlier screening applied" in kept_all
 
 
 def test_assemble_and_render_reports(tmp_path: Path) -> None:

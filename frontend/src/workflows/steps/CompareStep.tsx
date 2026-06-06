@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as api from "../../api";
 import type { BatchDifference, BatchSummary, ParamDiff } from "../../types";
-import { Badge, Card } from "../../components/ui";
+import { Badge, Button, Card } from "../../components/ui";
 import { BatchOverlayPlot, DiffPlot, type OverlaySeries } from "../../components/Plots";
 import { toLoss, usePreferences } from "../../preferences";
 import { useAnalysis } from "../AnalysisContext";
@@ -59,6 +59,22 @@ export default function CompareStep() {
 
       {data && (
         <>
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="text-xs uppercase tracking-wider text-slate-500">
+              comparison report
+            </span>
+            {(["html", "pdf", "docx"] as const).map((fmt) => (
+              <a
+                key={fmt}
+                href={api.compareReportUrl(data.campaign_id, data.baseline, fmt)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Button variant="ghost">{fmt.toUpperCase()}</Button>
+              </a>
+            ))}
+          </div>
+
           <Card title="Overlay" hint={`${data.batches.length} batches`}>
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
               <div>

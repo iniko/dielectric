@@ -16,6 +16,7 @@ class SetSummary(BaseModel):
     n_repeats: int
     n_used: int
     excluded_indices: list[int]
+    excluded_filenames: list[str] = Field(default_factory=list)
     band_ghz: tuple[float, float]
     eps_real_range: tuple[float, float]
     sigma_low_s_per_m: float
@@ -156,6 +157,43 @@ class RepeatDistributionOut(BaseModel):
     shapiro_p_imag: float
 
 
+class RepeatDetail(BaseModel):
+    index: int
+    filename: str
+    zscore: float  # robust MAD z-score of consensus distance
+    kept: bool
+    reason: str  # "kept" | "excluded (k·MAD rule)" | "excluded (manual)" | "kept (manual override)"
+
+
+class ScreeningInfo(BaseModel):
+    outlier_k: float | None  # threshold applied (None = screening disabled / keep all)
+    n_total: int
+    n_used: int
+    n_excluded: int
+    manual_exclude: list[int]
+    manual_keep: list[int]
+    method: str
+    citation: str
+
+
+class ScreeningImpact(BaseModel):
+    """How the Type A mean shifts if the excluded repeats were kept (with vs without)."""
+
+    frequency_ref_hz: float
+    eps_real_with: float  # screened (as used)
+    eps_real_without: float  # all repeats kept
+    sigma_with: float
+    sigma_without: float
+    max_abs_d_eps_real: float
+    max_abs_d_sigma: float
+
+
+class ScreeningRequest(BaseModel):
+    outlier_k: float | None = 3.5
+    manual_exclude: list[int] = Field(default_factory=list)
+    manual_keep: list[int] = Field(default_factory=list)
+
+
 class RepeatsOut(BaseModel):
     set_id: str
     name: str
@@ -165,6 +203,9 @@ class RepeatsOut(BaseModel):
     coverage_k: float
     band: RepeatBand
     distributions: list[RepeatDistributionOut] = Field(default_factory=list)
+    repeats: list[RepeatDetail] = Field(default_factory=list)
+    screening: ScreeningInfo | None = None
+    impact: ScreeningImpact | None = None
 
 
 class FitRequest(BaseModel):

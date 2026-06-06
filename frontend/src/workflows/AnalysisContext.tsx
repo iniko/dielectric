@@ -29,6 +29,8 @@ interface AnalysisState {
   setFitReq: (r: FitReq) => void;
   fit: FitOut | null;
   analysis: CampaignAnalysis | null;
+  screeningVersion: number; // bumped when a set's repeat screening changes (invalidates downstream)
+  bumpScreening: () => void;
   ensureCampaign: () => Promise<string>;
   ensureFit: () => Promise<FitOut>;
   ensureAnalysis: (force?: boolean) => Promise<CampaignAnalysis>;
@@ -49,6 +51,7 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   const [fitReq, setFitReq] = useState<FitReq>({ model: "", poles: "", dcSigma: "" });
   const [fit, setFit] = useState<FitOut | null>(null);
   const [analysis, setAnalysis] = useState<CampaignAnalysis | null>(null);
+  const [screeningVersion, setScreeningVersion] = useState(0);
 
   // Cache keys guard against recreating the campaign / refitting when nothing relevant changed.
   const cache = useRef({ cid: null as string | null, campaignSig: "", fitSig: "", analysisSig: "" });
@@ -83,8 +86,13 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
 
   const reqSig = useCallback(
     (cid: string) =>
-      JSON.stringify([cid, resolveModel(fitReq), fitReq.poles ? Number(fitReq.poles) : null]),
-    [fitReq],
+      JSON.stringify([
+        cid,
+        resolveModel(fitReq),
+        fitReq.poles ? Number(fitReq.poles) : null,
+        screeningVersion, // screening change → new mean → refetch fit/analysis/compare
+      ]),
+    [fitReq, screeningVersion],
   );
 
   const ensureFit = useCallback(async () => {
@@ -127,6 +135,8 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     setFitReq,
     fit,
     analysis,
+    screeningVersion,
+    bumpScreening: () => setScreeningVersion((v) => v + 1),
     ensureCampaign,
     ensureFit,
     ensureAnalysis,

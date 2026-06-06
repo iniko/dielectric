@@ -22,7 +22,7 @@ Use the project venv (`.venv/bin/...`). Install: `pip install -e ".[dev,report,h
 # Library gates (must all pass before committing)
 .venv/bin/ruff check .                      # lints the WHOLE repo (see exclusions in pyproject)
 .venv/bin/mypy dielectric                   # strict
-.venv/bin/python -m pytest                  # 90 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
+.venv/bin/python -m pytest                  # 95 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
 .venv/bin/python -m pytest tests/test_fitting.py::test_conductivity_recovered   # single test
 
 # Backend
@@ -63,9 +63,19 @@ at the I/O boundary, so nothing downstream re-checks it.
 
 **The data pipeline:** `io/csv_loader.py` (Agilent 85070 + generic) → `io/campaign.py`
 (`MeasurementSet`/`ValidationSet`/`Campaign`, load *any number* of sets via `from_glob`) →
-`uncertainty/typea.py` `combine_repeats` (complex mean + per-component SEM, with a k·MAD repeat
-outlier screen) → `fitting/engine.py` (generic NLLS) → `fitting/selection.py` (auto-select) →
+`uncertainty/typea.py` `combine_repeats` (complex mean + per-component SEM, with a k·MAD/Hampel
+repeat outlier screen) → `fitting/engine.py` (generic NLLS) → `fitting/selection.py` (auto-select) →
 `verification/*` → `reporting/*`.
+
+**Repeat exclusion is transparent + auditable.** `combine_repeats` always returns `repeat_zscores`
+(original order) plus `outlier_k_used`/`manual_exclude`/`manual_keep`, and `TypeAResult.reason(i)`
+explains each keep/drop. The screen is a deliberate, recorded choice: it's user-adjustable
+(threshold, **keep-all-with-warning**, per-repeat manual override) via `POST /sets/{id}/screening`
+(stored in `STORE.screening`, propagated through the pipeline by `services._screened_type_a`), the
+Repeats step shows a per-repeat z-score/filename/reason table + a with/without **impact** readout
+(reusing `comparison.compare_spectra`), and the exclusion is **disclosed** in
+`methods_paragraph` + the `ReproducibilityManifest`. Never silently drop repeats — that non-disclosure
+is the rigor failure, not the algorithm.
 
 **Fitting (`fitting/`):** `engine.fit` minimises stacked `[Re(resid), Im(resid)]`, optimises τ in
 **log10 space** (mapping covariance back via the delta method) — see the sign/log notes below —
@@ -82,8 +92,11 @@ contain no numerics. `services._finite()` clamps inf/nan (AICc, dof) for JSON. B
 `POST /campaigns/{id}/analyze`, the API is decomposed into **per-step endpoints** for the stepwise
 UI: `GET /sets/{id}/repeats` (Type A band + distribution), `POST /campaigns/{id}/fit` (re-fittable;
 caches the fit in `STORE.fits`), `GET /campaigns/{id}/kk` (predicted-vs-measured ε′ arrays),
-`POST /sets/{id}/reference-match`, `POST /sets/{id}/saline-sweep`, and
-`POST /campaigns/{id}/compare` (batch-vs-batch). Numerics for these live in the library
+`POST /sets/{id}/reference-match`, `POST /sets/{id}/saline-sweep`,
+`POST /campaigns/{id}/compare` (batch-vs-batch), `POST /sets/{id}/screening` (set the repeat
+outlier-screening choice → invalidates dependent fit/analysis caches), and
+`GET /campaigns/{id}/compare/report` (batch-comparison report, pdf|docx|html). Numerics for these
+live in the library
 (`uncertainty.typea.confidence_band`/`repeat_distribution`, `verification.reference_overlay`,
 `comparison.compare_spectra`/`compare_parameters`) — services stays a thin mapper. NB: analysis
 results/verdicts and compare batches are keyed by sample **name** (`SetSummary.name`), not the upload

@@ -31,23 +31,37 @@ def methods_paragraph(
     kk: KKResult | None = None,
     validation: CampaignValidation | None = None,
     n_repeats: int | None = None,
+    n_repeats_total: int | None = None,
+    n_excluded: int = 0,
+    outlier_k: float | None = None,
     band_ghz: tuple[float, float] | None = None,
 ) -> str:
-    """Generate a publication-ready methods paragraph for one fitted spectrum."""
+    """Generate a publication-ready methods paragraph for one fitted spectrum.
+
+    ``n_repeats`` is the number of repeats actually used (after screening); ``n_repeats_total`` and
+    ``n_excluded`` disclose any outlier exclusion so the averaging is reported transparently.
+    """
     sentences: list[str] = []
 
     model_name = type(fit.model).__name__
     model_phrase = _MODEL_PHRASES.get(model_name, f"a {model_name} model")
     citation = fit.model.provenance.short_citation()
 
-    # 1. Data / averaging.
+    # 1. Data / averaging — disclose any repeat exclusion (the rigor-critical bit).
     if band_ghz is not None:
         band = f"from {band_ghz[0]:.2g} to {band_ghz[1]:.2g} GHz"
     else:
         band = "across the measured band"
-    repeats = (
-        f" and averaged over {n_repeats} repeat measurements (Type A)" if n_repeats else ""
-    )
+    repeats = ""
+    if n_repeats:
+        repeats = f" and averaged over {n_repeats} repeat measurements (Type A)"
+        if n_excluded and n_repeats_total:
+            repeats += (
+                f", after excluding {n_excluded} of {n_repeats_total} repeats as outliers by a "
+                f"robust MAD-based z-score screen (Hampel identifier, k = {outlier_k:g})"
+            )
+        elif outlier_k is None and n_repeats_total:
+            repeats += " (no outlier screening applied; all repeats retained)"
     sentences.append(
         f"Complex relative permittivity spectra ε*(f) were acquired {band}{repeats}, with the loss "
         "stored in the engineering e^{jωt} convention (Im(ε*) < 0)."

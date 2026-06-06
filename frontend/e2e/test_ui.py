@@ -71,10 +71,20 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
     page.screenshot(path="/tmp/diel_step1_load.png", full_page=True)
 
-    # (4) step 2: Repeat statistics
+    # (4) step 2: Repeat statistics — transparent screening table + controls
     step(page, "Repeats")
     obs.append(("repeats band plot", page.locator(".js-plotly-plot").count() >= 2))
     obs.append(("distribution inspector", page.locator("text=Distribution inspector").count() >= 1))
+    obs.append(("per-repeat z-score table", page.locator("text=threshold k").count() >= 1))
+    obs.append(("screening method cited (Hampel)", page.locator("text=Hampel").count() >= 1))
+    # flip 'keep all repeats' (the screening checkbox) and confirm the warning appears
+    keep_all = page.locator('input[type="checkbox"]').first
+    keep_all.click()
+    page.wait_for_selector("text=Outlier screening is OFF", timeout=15000)
+    obs.append(("keep-all warning", page.locator("text=Outlier screening is OFF").count() >= 1))
+    # re-enable screening so downstream steps use the default
+    keep_all.click()
+    page.wait_for_timeout(1800)
     page.screenshot(path="/tmp/diel_step2_repeats.png", full_page=True)
 
     # (5) step 3: Model fit (waits for the ranking table, which only renders once the fit returns)
@@ -113,6 +123,8 @@ with sync_playwright() as p:
     obs.append(("parameter-diff table", page.locator("text=Parameter differences").count() >= 1))
     obs.append(("conductivity panel by default (σ pref)",
                 page.locator("text=Conductivity σ").count() >= 1))
+    obs.append(("comparison report download buttons",
+                page.get_by_role("button", name="HTML").count() >= 1))
     # flip the global loss-axis toggle to ε″ and confirm the lossy panel re-labels
     page.get_by_role("button", name="ε″", exact=True).click()
     page.wait_for_timeout(1500)

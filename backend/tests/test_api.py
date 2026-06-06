@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
+from backend.app.store import STORE
 
 client = TestClient(app)
 DATA = Path(__file__).resolve().parents[2] / "data"
@@ -250,6 +251,75 @@ def test_compare_two_batches() -> None:
     # an explicit baseline flips the comparison direction
     flipped = client.post(f"/api/campaigns/{cid}/compare", json={"baseline": "batchB"}).json()
     assert flipped["differences"][0]["sample_id"] == "batchA"
+
+
+def test_repeats_expose_transparent_screening() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=12)
+    body = client.get(f"/api/sets/{m['id']}/repeats").json()
+    # one detail row per repeat, with filename + z-score + reason
+    assert len(body["repeats"]) == body["n_repeats"]
+    r0 = body["repeats"][0]
+    assert r0["filename"].endswith(".csv")
+    assert "zscore" in r0 and "reason" in r0
+    sc = body["screening"]
+    assert sc["outlier_k"] == 3.5
+    assert sc["n_used"] + sc["n_excluded"] == sc["n_total"] == body["n_repeats"]
+    assert "Hampel" in sc["method"] or "MAD" in sc["method"]
+    assert sc["citation"]
+
+
+def test_screening_keep_all_and_manual_override() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=12)
+    sid = m["id"]
+    # keep all → screening disabled, nothing excluded
+    keep_all = client.post(f"/api/sets/{sid}/screening", json={"outlier_k": None}).json()
+    assert keep_all["screening"]["outlier_k"] is None
+    assert keep_all["screening"]["n_excluded"] == 0
+    assert keep_all["n_used"] == keep_all["n_repeats"]
+    assert keep_all["impact"] is None  # nothing excluded → no impact
+
+    # force-exclude repeat 0 → it is dropped with a manual reason and the impact is reported
+    forced = client.post(
+        f"/api/sets/{sid}/screening", json={"outlier_k": 3.5, "manual_exclude": [0]}
+    ).json()
+    assert 0 in forced["excluded_indices"]
+    assert forced["repeats"][0]["reason"] == "excluded (manual)"
+    assert forced["impact"] is not None
+    assert forced["impact"]["eps_real_with"] != forced["impact"]["eps_real_without"]
+
+
+def test_screening_change_invalidates_and_propagates() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=12)
+    sid = m["id"]
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [sid], "temperature_c": 25.0,
+    }).json()["id"]
+    client.post(f"/api/campaigns/{cid}/analyze", json={}).raise_for_status()
+    # change the screening; the cached fit/analysis for this campaign must be dropped
+    client.post(f"/api/sets/{sid}/screening", json={"outlier_k": None}).raise_for_status()
+    assert cid not in STORE.fits and cid not in STORE.analyses
+    # re-analyze with the new (keep-all) screening succeeds and uses all repeats downstream
+    client.post(f"/api/campaigns/{cid}/analyze", json={}).raise_for_status()
+
+
+def test_comparison_report_renders_all_formats() -> None:
+    a = _upload("h02s19m*.csv", "measurement", limit=10, name="normal")
+    b = _upload("h02v*.csv", "measurement", limit=10, name="diseased")
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [a["id"], b["id"]], "temperature_c": 25.0,
+    }).json()["id"]
+    for fmt, head in (("pdf", b"%PDF"), ("docx", b"PK\x03\x04")):
+        r = client.get(f"/api/campaigns/{cid}/compare/report", params={"fmt": fmt})
+        assert r.status_code == 200, r.text
+        assert r.content[:4] == head
+    # HTML is self-contained and carries the batch names + a difference verdict
+    html = client.get(
+        f"/api/campaigns/{cid}/compare/report", params={"fmt": "html", "baseline": "normal"}
+    ).content.decode("utf-8")
+    assert html.startswith("<!doctype html>")
+    assert "data:image/png;base64," in html  # figures embedded
+    assert "diseased" in html and "normal" in html
+    assert "separates over" in html  # the verdict sentence
 
 
 def test_compare_needs_two_sets() -> None:

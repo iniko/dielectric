@@ -14,6 +14,7 @@ import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
+from ..comparison import SpectrumDifference
 from ..fitting.result import FitResult
 from ..spectrum import Spectrum
 from ..units import FloatArray
@@ -103,6 +104,57 @@ def cole_cole_figure(
         if caption:
             _caption(fig, caption, fit.data_hash if fit else None)
         fig.tight_layout(rect=(0, 0.04, 1, 1))
+    return fig
+
+
+def comparison_overlay_figure(
+    batches: list[tuple[str, Spectrum]], *, title: str = "Batch comparison"
+) -> Figure:
+    """Overlay ε'(f) and ε''(f) of several batches' Type A means (one colour per batch)."""
+    with matplotlib.rc_context(PUBLICATION_RCPARAMS):
+        fig = _new_figure()
+        ax1 = fig.add_subplot(2, 1, 1)
+        ax2 = fig.add_subplot(2, 1, 2, sharex=ax1)
+        for i, (label, sp) in enumerate(batches):
+            color = WONG_PALETTE[i % len(WONG_PALETTE)]
+            ax1.semilogx(sp.frequency_hz, sp.eps_real, "-", color=color, label=label)
+            ax2.semilogx(sp.frequency_hz, sp.loss, "-", color=color, label=label)
+        ax1.set_ylabel("ε′")
+        ax2.set_ylabel("ε″ = −Im(ε*)")
+        ax2.set_xlabel("frequency (Hz)")
+        ax1.set_title(title)
+        ax1.legend()
+        fig.tight_layout()
+    return fig
+
+
+def difference_figure(
+    diff: SpectrumDifference, *, sample_label: str = "A", baseline_label: str = "B"
+) -> Figure:
+    """Δε′(f) and Δσ(f) of one batch vs the baseline, with the significant points marked."""
+    with matplotlib.rc_context(PUBLICATION_RCPARAMS):
+        fig = _new_figure()
+        ax1 = fig.add_subplot(2, 1, 1)
+        ax2 = fig.add_subplot(2, 1, 2, sharex=ax1)
+        f = diff.frequency_hz
+        ax1.semilogx(f, diff.delta_eps_real, "-", color=WONG_PALETTE[0])
+        ax1.semilogx(
+            f[diff.significant_eps], diff.delta_eps_real[diff.significant_eps], "o",
+            color=WONG_PALETTE[3], markersize=3, label="significant",
+        )
+        ax2.semilogx(f, diff.delta_sigma, "-", color=WONG_PALETTE[0])
+        ax2.semilogx(
+            f[diff.significant_sigma], diff.delta_sigma[diff.significant_sigma], "o",
+            color=WONG_PALETTE[3], markersize=3,
+        )
+        for ax in (ax1, ax2):
+            ax.axhline(0.0, color="0.6", linewidth=0.8)
+        ax1.set_ylabel("Δε′")
+        ax2.set_ylabel("Δσ (S/m)")
+        ax2.set_xlabel("frequency (Hz)")
+        ax1.set_title(f"{sample_label} − {baseline_label}")
+        ax1.legend()
+        fig.tight_layout()
     return fig
 
 

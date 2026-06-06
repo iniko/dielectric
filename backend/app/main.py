@@ -121,6 +121,14 @@ def repeats(set_id: str, frequencies: str | None = None) -> schemas.RepeatsOut:
         raise HTTPException(404, str(exc)) from exc
 
 
+@app.post("/api/sets/{set_id}/screening", response_model=schemas.RepeatsOut)
+def set_screening(set_id: str, req: schemas.ScreeningRequest) -> schemas.RepeatsOut:
+    try:
+        return services.set_screening(set_id, req)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @app.post("/api/sets/{set_id}/reference-match", response_model=schemas.ReferenceMatchOut)
 def reference_match(set_id: str, req: schemas.ReferenceMatchRequest) -> schemas.ReferenceMatchOut:
     try:
@@ -147,6 +155,26 @@ def compare(campaign_id: str, req: schemas.CompareRequest) -> schemas.CompareOut
         return services.compare_campaign(campaign_id, req)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/campaigns/{campaign_id}/compare/report")
+def compare_report(
+    campaign_id: str, baseline: str | None = None, fmt: str = "pdf"
+) -> FileResponse:
+    if fmt not in ("pdf", "docx", "html"):
+        raise HTTPException(400, "fmt must be 'pdf', 'docx', or 'html'")
+    if campaign_id not in STORE.campaigns:
+        raise HTTPException(404, "unknown campaign")
+    try:
+        path = services.generate_comparison_report(campaign_id, baseline, fmt)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    media = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "html": "text/html",
+    }[fmt]
+    return FileResponse(path, media_type=media, filename=f"comparison_report.{fmt}")
 
 
 @app.get("/api/campaigns/{campaign_id}/report")

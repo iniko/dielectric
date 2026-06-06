@@ -44,13 +44,17 @@ def assemble_report(
     validation: CampaignValidation | None = None,
     kk: KKResult | None = None,
     n_repeats: int | None = None,
+    n_repeats_total: int | None = None,
+    n_excluded: int = 0,
+    outlier_k: float | None = None,
     band_ghz: tuple[float, float] | None = None,
     figure_paths: tuple[str, ...] = (),
 ) -> ReportData:
     """Build :class:`ReportData` from the analysis objects."""
     methods = methods_paragraph(
         fit, selection=selection, kk=kk, validation=validation,
-        n_repeats=n_repeats, band_ghz=band_ghz,
+        n_repeats=n_repeats, n_repeats_total=n_repeats_total, n_excluded=n_excluded,
+        outlier_k=outlier_k, band_ghz=band_ghz,
     )
     param_rows = tuple(
         (name, format_measurement(fit.params[name], fit.param_uncertainties.get(name, 0.0)))

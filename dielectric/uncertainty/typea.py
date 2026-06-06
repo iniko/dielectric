@@ -25,12 +25,29 @@ class TypeAResult:
     mean: Spectrum  # carries sem (real=SEM ε', imag=SEM ε'')
     n_repeats_used: int
     excluded_indices: tuple[int, ...]
-    repeat_zscores: FloatArray  # robust z-score per repeat (consensus distance)
+    repeat_zscores: FloatArray  # robust z-score per repeat (consensus distance), original order
+    outlier_k_used: float | None = None  # the screening threshold actually applied (None = off)
+    manual_exclude: tuple[int, ...] = ()  # repeats the caller forced out
+    manual_keep: tuple[int, ...] = ()  # repeats the caller forced in despite the rule
+
+    @property
+    def n_repeats_total(self) -> int:
+        return self.n_repeats_used + len(self.excluded_indices)
 
     @property
     def combined_sem(self) -> ComplexArray:
         assert self.mean.sem is not None
         return self.mean.sem
+
+    def reason(self, index: int) -> str:
+        """Why repeat ``index`` was kept or excluded — for transparent display."""
+        if index in self.manual_exclude:
+            return "excluded (manual)"
+        if index in self.excluded_indices:
+            return "excluded (k·MAD rule)"
+        if index in self.manual_keep:
+            return "kept (manual override)"
+        return "kept"
 
 
 @dataclass(frozen=True)
@@ -153,6 +170,8 @@ def combine_repeats(
     spectra: tuple[Spectrum, ...] | list[Spectrum],
     *,
     outlier_k: float | None = 3.5,
+    manual_exclude: tuple[int, ...] | list[int] = (),
+    manual_keep: tuple[int, ...] | list[int] = (),
     sample_id: str | None = None,
     temperature_c: float | None = None,
 ) -> TypeAResult:
@@ -162,7 +181,16 @@ def combine_repeats(
     ----------
     outlier_k:
         If not ``None``, a repeat whose robust z-score of consensus-distance exceeds ``outlier_k``
-        is excluded from the mean/SEM (k·MAD rule). ``None`` disables the screen.
+        is excluded from the mean/SEM (k·MAD rule, a Hampel identifier). ``None`` disables the
+        screen and keeps every repeat.
+    manual_exclude:
+        Repeat indices (original order) the caller forces out regardless of the rule.
+    manual_keep:
+        Repeat indices the caller forces back in even if the rule flagged them. Takes precedence
+        over the rule but not over ``manual_exclude``.
+
+    ``repeat_zscores`` is always computed for **every** input repeat (in original order) so the
+    decision is auditable even for screened or manually-overridden repeats.
     """
     spectra = tuple(spectra)
     if len(spectra) < 1:
@@ -170,6 +198,8 @@ def combine_repeats(
     f = _assert_shared_grid(spectra)
     stack = np.array([s.epsilon for s in spectra])  # (n_repeats, n_freq)
     n = stack.shape[0]
+    forced_out = {i for i in manual_exclude if 0 <= i < n}
+    forced_in = {i for i in manual_keep if 0 <= i < n}
 
     # Robust per-repeat outlier screen: each repeat's median relative distance from the consensus
     # (median spectrum), turned into a robust z-score (median/MAD) — the same robust-scaling idea as
@@ -181,12 +211,19 @@ def combine_repeats(
     mad = float(np.median(np.abs(distance - med)))
     zscores = (distance - med) / (1.4826 * mad) if mad > 0 else np.zeros(n)
 
-    if outlier_k is not None and n >= 4:
-        keep_mask = zscores <= outlier_k
-        if not keep_mask.any():  # never drop everything
-            keep_mask = np.ones(n, dtype=bool)
-    else:
+    screen_on = outlier_k is not None and n >= 4
+    # inline the None-check so mypy narrows `outlier_k` inside the comparison
+    keep_mask = (
+        zscores <= outlier_k if outlier_k is not None and n >= 4 else np.ones(n, dtype=bool)
+    )
+    # Apply manual overrides: forced-in repeats are kept, forced-out repeats are dropped.
+    for i in forced_in:
+        keep_mask[i] = True
+    for i in forced_out:
+        keep_mask[i] = False
+    if not keep_mask.any():  # never drop everything
         keep_mask = np.ones(n, dtype=bool)
+        forced_out = set()
     excluded = tuple(int(i) for i in np.flatnonzero(~keep_mask))
     used = stack[keep_mask]
     n_used = used.shape[0]
@@ -211,4 +248,7 @@ def combine_repeats(
         n_repeats_used=n_used,
         excluded_indices=excluded,
         repeat_zscores=zscores,
+        outlier_k_used=outlier_k if screen_on else None,
+        manual_exclude=tuple(sorted(forced_out)),
+        manual_keep=tuple(sorted(forced_in)),
     )

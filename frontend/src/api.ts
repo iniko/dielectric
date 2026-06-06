@@ -9,6 +9,7 @@ import type {
   ReferenceMatchOut,
   RepeatsOut,
   SalineSweepOut,
+  ScreeningRequest,
   SetSummary,
 } from "./types";
 
@@ -87,6 +88,10 @@ export async function getRepeats(setId: string, frequenciesGhz: number[]): Promi
   return json(await fetch(`/api/sets/${setId}/repeats${q}`));
 }
 
+export async function setScreening(setId: string, req: ScreeningRequest): Promise<RepeatsOut> {
+  return postJson(`/api/sets/${setId}/screening`, req);
+}
+
 export async function fitCampaign(
   campaignId: string,
   body: { model?: string | null; n_poles?: number | null; dc_sigma?: boolean | null },
@@ -118,6 +123,14 @@ export async function compareCampaign(
 
 export function reportUrl(campaignId: string, sample: string, fmt: "pdf" | "docx" | "html"): string {
   return `/api/campaigns/${campaignId}/report?sample=${encodeURIComponent(sample)}&fmt=${fmt}`;
+}
+
+export function compareReportUrl(
+  campaignId: string,
+  baseline: string,
+  fmt: "pdf" | "docx" | "html",
+): string {
+  return `/api/campaigns/${campaignId}/compare/report?baseline=${encodeURIComponent(baseline)}&fmt=${fmt}`;
 }
 
 export async function computeBudget(body: {

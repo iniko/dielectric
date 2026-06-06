@@ -36,10 +36,16 @@ from dielectric.reference.database import get, query
 from dielectric.reference.materials import ReferenceMaterial
 from dielectric.reporting import (
     ReproducibilityManifest,
+    assemble_comparison_report,
     assemble_report,
     bode_figure,
     cole_cole_figure,
+    comparison_overlay_figure,
+    difference_figure,
     methods_paragraph,
+    render_comparison_docx,
+    render_comparison_html,
+    render_comparison_pdf,
     render_docx,
     render_html,
     render_pdf,
@@ -51,6 +57,7 @@ from dielectric.uncertainty.gum import GUMBudget, UncertaintyComponent
 from dielectric.uncertainty.typea import (
     TypeABand,
     TypeAResult,
+    combine_repeats,
     confidence_band,
     repeat_distribution,
 )
@@ -63,7 +70,26 @@ from dielectric.verification import (
 )
 
 from . import schemas
-from .store import STORE
+from .store import STORE, ScreeningChoice
+
+
+def _screened_type_a(
+    obj: MeasurementSet | ValidationSet, set_id: str | None = None
+) -> TypeAResult:
+    """Type A combine honoring the set's stored screening choice (threshold + manual overrides)."""
+    sid = set_id or STORE.set_id_of(obj)
+    ch = STORE.screening_for(sid)
+    return combine_repeats(
+        obj.spectra, outlier_k=ch.outlier_k, manual_exclude=ch.manual_exclude,
+        manual_keep=ch.manual_keep, sample_id=obj.sample_id, temperature_c=obj.temperature_c,
+    )
+
+
+_SCREEN_METHOD = (
+    "robust MAD-based z-score (Hampel identifier) of each repeat's median relative distance from "
+    "the consensus (median) spectrum; applied only when n≥4 and never dropping all repeats"
+)
+_SCREEN_CITATION = "Hampel 1974; Rousseeuw & Croux 1993 (1.4826 MAD scaling)"
 
 
 def _load_spectrum(content: bytes) -> tuple[Spectrum, bool]:
@@ -112,7 +138,7 @@ def make_validation_set(
 def set_summary(
     set_id: str, obj: MeasurementSet | ValidationSet, role: str, corrected: bool
 ) -> schemas.SetSummary:
-    ta = obj.type_a()
+    ta = _screened_type_a(obj, set_id)
     mean = ta.mean
     q = mean.quality_report()
     notes = []
@@ -128,6 +154,9 @@ def set_summary(
         n_repeats=obj.n_repeats,
         n_used=ta.n_repeats_used,
         excluded_indices=list(ta.excluded_indices),
+        excluded_filenames=[
+            obj.file_names[i] for i in ta.excluded_indices if i < len(obj.file_names)
+        ],
         band_ghz=(mean.band_hz[0] / 1e9, mean.band_hz[1] / 1e9),
         eps_real_range=(float(mean.eps_real[0]), float(mean.eps_real[-1])),
         sigma_low_s_per_m=float(mean.effective_conductivity[0]),
@@ -225,7 +254,7 @@ def fit_campaign(campaign_id: str, req: schemas.FitRequest) -> schemas.FitOut:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for ms in campaign.measurements:
-            ta = ms.type_a()
+            ta = _screened_type_a(ms)
             spectrum = ta.mean
             sel = select_model(spectrum, force_model=force, n_poles=req.n_poles)
             fit = sel.chosen.result
@@ -275,13 +304,67 @@ def kk_campaign(campaign_id: str) -> schemas.KKDetailOut:
     return schemas.KKDetailOut(campaign_id=campaign_id, results=results)
 
 
+def _repeat_details(
+    obj: MeasurementSet | ValidationSet, ta: TypeAResult
+) -> list[schemas.RepeatDetail]:
+    files = obj.file_names
+    excluded = set(ta.excluded_indices)
+    return [
+        schemas.RepeatDetail(
+            index=i,
+            filename=files[i] if i < len(files) else f"repeat {i + 1}",
+            zscore=_finite(float(ta.repeat_zscores[i])),
+            kept=i not in excluded,
+            reason=ta.reason(i),
+        )
+        for i in range(obj.n_repeats)
+    ]
+
+
+def _screening_impact(
+    obj: MeasurementSet | ValidationSet, ta: TypeAResult
+) -> schemas.ScreeningImpact | None:
+    """How the Type A mean shifts if the excluded repeats were kept (reuses compare_spectra)."""
+    if not ta.excluded_indices:
+        return None  # nothing excluded → no impact to report
+    all_mean = combine_repeats(obj.spectra, outlier_k=None).mean
+    diff = compare_spectra(all_mean, ta.mean)  # all-repeats vs screened
+    f = ta.mean.frequency_hz
+    j = 0  # lowest in-band frequency as the reference point
+    return schemas.ScreeningImpact(
+        frequency_ref_hz=float(f[j]),
+        eps_real_with=_finite(float(ta.mean.eps_real[j])),
+        eps_real_without=_finite(float(all_mean.eps_real[j])),
+        sigma_with=_finite(float(ta.mean.effective_conductivity[j])),
+        sigma_without=_finite(float(all_mean.effective_conductivity[j])),
+        max_abs_d_eps_real=_finite(float(np.max(np.abs(diff.delta_eps_real)))),
+        max_abs_d_sigma=_finite(float(np.max(np.abs(diff.delta_sigma)))),
+    )
+
+
+def _screening_info(ta: TypeAResult) -> schemas.ScreeningInfo:
+    return schemas.ScreeningInfo(
+        outlier_k=ta.outlier_k_used,
+        n_total=ta.n_repeats_total,
+        n_used=ta.n_repeats_used,
+        n_excluded=len(ta.excluded_indices),
+        manual_exclude=list(ta.manual_exclude),
+        manual_keep=list(ta.manual_keep),
+        method=_SCREEN_METHOD,
+        citation=_SCREEN_CITATION,
+    )
+
+
 def repeats_for_set(set_id: str, frequencies_ghz: list[float]) -> schemas.RepeatsOut:
-    """Type A confidence band (+ optional per-frequency distribution) for one set's repeats."""
+    """Type A band + transparent per-repeat screening breakdown for one set's repeats."""
     obj = _get_set(set_id)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        ta = obj.type_a()
+        ta = _screened_type_a(obj, set_id)
         band = confidence_band(ta)
+        details = _repeat_details(obj, ta)
+        screening = _screening_info(ta)
+        impact = _screening_impact(obj, ta)
         dists: list[schemas.RepeatDistributionOut] = []
         if frequencies_ghz:
             for d in repeat_distribution(obj.spectra, [g * 1e9 for g in frequencies_ghz]):
@@ -297,9 +380,21 @@ def repeats_for_set(set_id: str, frequencies_ghz: list[float]) -> schemas.Repeat
     return schemas.RepeatsOut(
         set_id=set_id, name=obj.sample_id, n_repeats=obj.n_repeats, n_used=ta.n_repeats_used,
         excluded_indices=list(ta.excluded_indices), coverage_k=band.coverage_k,
-        band=_repeat_band(band),
-        distributions=dists,
+        band=_repeat_band(band), distributions=dists,
+        repeats=details, screening=screening, impact=impact,
     )
+
+
+def set_screening(set_id: str, req: schemas.ScreeningRequest) -> schemas.RepeatsOut:
+    """Persist a set's screening choice, invalidate dependent caches, return the refreshed view."""
+    _get_set(set_id)  # 404 if unknown
+    STORE.screening[set_id] = ScreeningChoice(
+        outlier_k=req.outlier_k,
+        manual_exclude=tuple(req.manual_exclude),
+        manual_keep=tuple(req.manual_keep),
+    )
+    STORE.invalidate_caches_for_set(set_id)
+    return repeats_for_set(set_id, [])
 
 
 def _repeat_band(band: TypeABand) -> schemas.RepeatBand:
@@ -329,7 +424,7 @@ def reference_match_for_set(
     obj = _get_set(set_id)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        mean = obj.type_a().mean
+        mean = _screened_type_a(obj, set_id).mean
         material = _reference_material(req)
         ov = reference_overlay(mean, material, target_temperature_c=req.temperature_c)
     return schemas.ReferenceMatchOut(
@@ -358,7 +453,7 @@ def saline_sweep_for_set(set_id: str) -> schemas.SalineSweepOut:
     rows: list[schemas.SalineSweepRow] = []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        mean = obj.type_a().mean
+        mean = _screened_type_a(obj, set_id).mean
         for m in _SWEEP_MOLARITIES:
             for t in _SWEEP_TEMPS:
                 material = get("saline", molarity=m, temperature_c=t)
@@ -452,7 +547,7 @@ def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.C
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for ms in campaign.measurements:
-            ta = ms.type_a()
+            ta = _screened_type_a(ms)
             spectrum = ta.mean
             sel = select_model(spectrum, force_model=req.model, n_poles=req.n_poles)
             fit = sel.chosen.result
@@ -461,8 +556,11 @@ def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.C
                                              target_temperature_c=temp, top=3)
             cv = validate_campaign(campaign) if campaign.has_validation else None
             band = (spectrum.band_hz[0] / 1e9, spectrum.band_hz[1] / 1e9)
-            methods = methods_paragraph(fit, selection=sel, kk=kk, validation=cv,
-                                        n_repeats=ta.n_repeats_used, band_ghz=band)
+            methods = methods_paragraph(
+                fit, selection=sel, kk=kk, validation=cv,
+                n_repeats=ta.n_repeats_used, n_repeats_total=ta.n_repeats_total,
+                n_excluded=len(ta.excluded_indices), outlier_k=ta.outlier_k_used, band_ghz=band,
+            )
 
             results.append(schemas.AnalysisResult(
                 sample_id=ms.sample_id, chosen_model=sel.chosen.label, overridden=sel.overridden,
@@ -551,6 +649,7 @@ def generate_report(campaign_id: str, sample_id: str, fmt: str) -> str:
     if sample is None:
         raise KeyError(f"unknown sample '{sample_id}'")
     fit, sel, spectrum = sample["fit"], sample["selection"], sample["spectrum"]
+    ta = cast(TypeAResult, sample["type_a"])
     out = tempfile.mkdtemp()
     bode = os.path.join(out, "bode.png")
     cole = os.path.join(out, "cole.png")
@@ -559,12 +658,20 @@ def generate_report(campaign_id: str, sample_id: str, fmt: str) -> str:
         save_figure(bode_figure(spectrum, fit, title=sample_id), bode)
         save_figure(cole_cole_figure(spectrum, fit), cole)
     manifest = ReproducibilityManifest.from_fit(
-        fit, timestamp=datetime.now(timezone.utc).isoformat(), data_source=sample_id
+        fit, timestamp=datetime.now(timezone.utc).isoformat(), data_source=sample_id,
+        extra={
+            "n_repeats_total": str(ta.n_repeats_total),
+            "n_repeats_used": str(ta.n_repeats_used),
+            "n_repeats_excluded": str(len(ta.excluded_indices)),
+            "excluded_indices": str(list(ta.excluded_indices)),
+            "outlier_k": "off" if ta.outlier_k_used is None else f"{ta.outlier_k_used:g}",
+        },
     )
     report = assemble_report(
         title=f"Dielectric analysis: {sample_id}", fit=fit, selection=sel, manifest=manifest,
-        validation=sample["validation"], kk=sample["kk"], n_repeats=sample["n_repeats"],
-        band_ghz=sample["band"], figure_paths=(bode, cole),
+        validation=sample["validation"], kk=sample["kk"], n_repeats=ta.n_repeats_used,
+        n_repeats_total=ta.n_repeats_total, n_excluded=len(ta.excluded_indices),
+        outlier_k=ta.outlier_k_used, band_ghz=sample["band"], figure_paths=(bode, cole),
     )
     path = os.path.join(out, f"report.{fmt}")
     if fmt == "docx":
@@ -573,6 +680,55 @@ def generate_report(campaign_id: str, sample_id: str, fmt: str) -> str:
         render_html(report, path)
     else:
         render_pdf(report, path)
+    return path
+
+
+def generate_comparison_report(campaign_id: str, baseline: str | None, fmt: str) -> str:
+    """Render a campaign-level batch-comparison report (PDF/Word/HTML) from the cached fits."""
+    cache = _fits(campaign_id)  # computes a default fit per batch if the step was skipped
+    sample_ids = list(cache.keys())
+    if len(sample_ids) < 2:
+        raise ValueError("a comparison report needs at least two measurement batches")
+    base_label = baseline or sample_ids[0]
+    if base_label not in cache:
+        raise ValueError(f"unknown baseline batch '{base_label}'")
+
+    batches = [
+        (sid, cast(FitResult, cache[sid]["fit"]), cast(TypeAResult, cache[sid]["type_a"]))
+        for sid in sample_ids
+    ]
+    base_ta = cast(TypeAResult, cache[base_label]["type_a"])
+    out = tempfile.mkdtemp()
+    figs: list[str] = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        overlay = comparison_overlay_figure([(sid, ta.mean) for sid, _, ta in batches])
+        op = os.path.join(out, "overlay.png")
+        save_figure(overlay, op)
+        figs.append(op)
+        for i, (sid, _fit, ta) in enumerate(batches):
+            if sid == base_label:
+                continue
+            sd = compare_spectra(ta.mean, base_ta.mean)
+            dp = os.path.join(out, f"diff_{i}.png")
+            save_figure(difference_figure(sd, sample_label=sid, baseline_label=base_label), dp)
+            figs.append(dp)
+    manifest = ReproducibilityManifest.from_fit(
+        batches[0][1], timestamp=datetime.now(timezone.utc).isoformat(),
+        data_source=f"batch comparison vs {base_label}",
+        extra={"batches": str(sample_ids), "baseline": base_label},
+    )
+    report = assemble_comparison_report(
+        title=f"Batch comparison (baseline: {base_label})", baseline_label=base_label,
+        batches=batches, manifest=manifest, figure_paths=tuple(figs),
+    )
+    path = os.path.join(out, f"comparison.{fmt}")
+    if fmt == "docx":
+        render_comparison_docx(report, path)
+    elif fmt == "html":
+        render_comparison_html(report, path)
+    else:
+        render_comparison_pdf(report, path)
     return path
 
 

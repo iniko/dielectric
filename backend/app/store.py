@@ -13,6 +13,15 @@ from dielectric.io.campaign import Campaign, MeasurementSet, ValidationSet
 
 
 @dataclass
+class ScreeningChoice:
+    """A set's repeat-screening configuration (the user's transparent, auditable choice)."""
+
+    outlier_k: float | None = 3.5  # None disables the k·MAD screen (keep all, with a UI warning)
+    manual_exclude: tuple[int, ...] = ()  # repeats forced out regardless of the rule
+    manual_keep: tuple[int, ...] = ()  # repeats forced in despite the rule
+
+
+@dataclass
 class Store:
     measurement_sets: dict[str, MeasurementSet] = field(default_factory=dict)
     validation_sets: dict[str, ValidationSet] = field(default_factory=dict)
@@ -20,9 +29,35 @@ class Store:
     analyses: dict[str, object] = field(default_factory=dict)  # campaign_id -> CampaignAnalysis
     # campaign_id -> {sample_id -> {"fit": ..., "spectrum": ..., ...}}
     fits: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
+    screening: dict[str, ScreeningChoice] = field(default_factory=dict)  # set_id -> choice
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:12]
+
+    def screening_for(self, set_id: str | None) -> ScreeningChoice:
+        return self.screening.get(set_id, ScreeningChoice()) if set_id else ScreeningChoice()
+
+    def set_id_of(self, obj: object) -> str | None:
+        """Reverse-lookup a stored set's id by object identity (campaigns hold the objects)."""
+        for sid, ms in self.measurement_sets.items():
+            if ms is obj:
+                return sid
+        for sid, vs in self.validation_sets.items():
+            if vs is obj:
+                return sid
+        return None
+
+    def invalidate_caches_for_set(self, set_id: str) -> None:
+        """Drop cached fits/analyses for every campaign containing this set (screening changed)."""
+        obj: MeasurementSet | ValidationSet | None = self.measurement_sets.get(set_id)
+        if obj is None:
+            obj = self.validation_sets.get(set_id)
+        if obj is None:
+            return
+        for cid, camp in list(self.campaigns.items()):
+            if any(m is obj for m in (*camp.measurements, *camp.validations)):
+                self.fits.pop(cid, None)
+                self.analyses.pop(cid, None)
 
     def add_measurement(self, ms: MeasurementSet) -> str:
         sid = self.new_id()

@@ -243,7 +243,8 @@ function LoadedList({
           </div>
           {s.excluded_indices.length > 0 && (
             <div className="mt-1 text-amber-300">
-              excluded repeat(s): {s.excluded_indices.join(", ")}
+              auto-excluded: {(s.excluded_filenames.length ? s.excluded_filenames : s.excluded_indices.map((i) => `#${i + 1}`)).join(", ")}{" "}
+              <span className="text-slate-500">(see Repeats step to review/override)</span>
             </div>
           )}
           {s.notes.map((n, i) => (

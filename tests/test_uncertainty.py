@@ -42,6 +42,47 @@ def test_confidence_band_brackets_the_mean() -> None:
     assert np.all(band.eps_real_hi - band.eps_real_lo > 0)
 
 
+def _with_bad_repeat(n_good: int = 8, seed: int = 0) -> tuple[Spectrum, ...]:
+    f = np.geomspace(2e8, 2e10, 40)
+    base = 5 + 50 / (1 + 1j * 2 * np.pi * f * 8e-12)
+    rng = np.random.default_rng(seed)
+    good = [
+        Spectrum(f, base + rng.normal(0, 0.02, f.size) + 1j * rng.normal(0, 0.02, f.size))
+        for _ in range(n_good)
+    ]
+    good.append(Spectrum(f, base * 1.5))  # an obviously bad repeat at the last index
+    return tuple(good)
+
+
+def test_combine_repeats_zscores_and_threshold_are_surfaced() -> None:
+    reps = _with_bad_repeat()
+    ta = combine_repeats(reps, outlier_k=3.5)
+    assert ta.repeat_zscores.size == len(reps)  # one z-score per input repeat, original order
+    assert len(reps) - 1 in ta.excluded_indices
+    assert ta.outlier_k_used == 3.5
+    assert ta.n_repeats_total == len(reps)
+    assert ta.reason(len(reps) - 1) == "excluded (k·MAD rule)"
+
+
+def test_combine_repeats_keep_all_disables_screen() -> None:
+    reps = _with_bad_repeat()
+    ta = combine_repeats(reps, outlier_k=None)
+    assert ta.excluded_indices == ()
+    assert ta.outlier_k_used is None
+    assert ta.n_repeats_used == len(reps)
+
+
+def test_combine_repeats_manual_override_both_ways() -> None:
+    reps = _with_bad_repeat()
+    bad = len(reps) - 1
+    kept = combine_repeats(reps, outlier_k=3.5, manual_keep=[bad])
+    assert bad not in kept.excluded_indices
+    assert kept.reason(bad) == "kept (manual override)"
+    dropped = combine_repeats(reps, outlier_k=3.5, manual_exclude=[0])
+    assert 0 in dropped.excluded_indices and bad in dropped.excluded_indices
+    assert dropped.reason(0) == "excluded (manual)"
+
+
 def test_repeat_distribution_summarises_per_frequency() -> None:
     reps = _repeats(n=12)
     dists = repeat_distribution(reps, [1e9, 5e9])
