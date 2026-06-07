@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from .bibliography import collect_provenances, to_bibtex
+from .campaign_report import (
+    render_campaign_docx,
+    render_campaign_html,
+    render_campaign_pdf,
+)
 from .comparison_report import (
     ComparisonReportData,
     assemble_comparison_report,
@@ -46,6 +51,9 @@ __all__ = [
     "methods_paragraph",
     "parameter_table_csv",
     "parameter_table_latex",
+    "render_campaign_docx",
+    "render_campaign_html",
+    "render_campaign_pdf",
     "render_comparison_docx",
     "render_comparison_html",
     "render_comparison_pdf",

@@ -18,9 +18,10 @@ export default function ReportStep() {
   return (
     <div>
       <StepIntro title="7 · Report">
-        A reproducible, paper-ready report per sample: the methods paragraph (paste-ready), the fit and
-        selection tables, figures, references, and a reproducibility manifest. Export as a
-        self-contained HTML file (offline, copy-paste friendly), PDF, or Word.
+        A reproducible, paper-ready report: the methods paragraph (paste-ready), fit and selection
+        tables, figures, references, and a reproducibility manifest. Download <b>one combined campaign
+        report</b> (every batch's analysis + the comparison, when there are ≥2 batches), or each batch
+        individually — as self-contained HTML, PDF, or Word.
       </StepIntro>
 
       {loading && <Loading what="Assembling analysis…" />}
@@ -37,6 +38,25 @@ export default function ReportStep() {
             {analysis.validation.validated ? "✓ " : "⚠ "}
             {analysis.validation.status}
           </div>
+
+          <Card title="Full campaign report" hint="every batch + comparison, one file">
+            <div className="flex flex-wrap gap-2">
+              {(["html", "pdf", "docx"] as const).map((fmt) => (
+                <a
+                  key={fmt}
+                  href={api.campaignReportUrl(analysis.campaign_id, fmt)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Button>{fmt.toUpperCase()}</Button>
+                </a>
+              ))}
+            </div>
+          </Card>
+
+          <PanelLabel>
+            <span className="mt-6 block">Or download each batch on its own:</span>
+          </PanelLabel>
           <div className="space-y-6">
             {analysis.results.map((r) => (
               <ReportPanel key={r.sample_id} r={r} campaignId={analysis.campaign_id} />

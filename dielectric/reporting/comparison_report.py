@@ -153,73 +153,75 @@ def assemble_comparison_report(
 # -- renderers ----------------------------------------------------------------------------------
 
 
-def render_comparison_pdf(report: ComparisonReportData, path: str | Path) -> None:
-    from .report_pdf import _ascii, _require_fpdf
+def write_comparison_pdf(pdf: object, report: ComparisonReportData) -> None:
+    """Write the comparison sections into an existing FPDF document."""
+    from .report_pdf import _ascii
 
-    fpdf_cls = _require_fpdf()
-    pdf = fpdf_cls()  # type: ignore[operator]
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
+    pdf.add_page()  # type: ignore[attr-defined]
 
     def cell(text: str, h: float) -> None:
-        pdf.multi_cell(0, h, _ascii(text), new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(0, h, _ascii(text), new_x="LMARGIN", new_y="NEXT")  # type: ignore[attr-defined]
 
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_font("Helvetica", "B", 16)  # type: ignore[attr-defined]
     cell(report.title, 9)
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("Helvetica", "", 10)  # type: ignore[attr-defined]
     cell(f"Baseline batch: {report.baseline}", 6)
-    pdf.ln(1)
+    pdf.ln(1)  # type: ignore[attr-defined]
 
-    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_font("Helvetica", "B", 13)  # type: ignore[attr-defined]
     cell("Batch summary", 7)
-    pdf.set_font("Courier", "", 8)
+    pdf.set_font("Courier", "", 8)  # type: ignore[attr-defined]
     cell(" | ".join(report.batch_header), 4)
     for r in report.batch_rows:
         cell(" | ".join(r), 4)
-    pdf.ln(1)
+    pdf.ln(1)  # type: ignore[attr-defined]
 
     for blk in report.diffs:
-        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_font("Helvetica", "B", 12)  # type: ignore[attr-defined]
         cell(blk.title, 6)
-        pdf.set_font("Helvetica", "", 10)
+        pdf.set_font("Helvetica", "", 10)  # type: ignore[attr-defined]
         cell(blk.verdict, 5)
-        pdf.set_font("Courier", "", 8)
+        pdf.set_font("Courier", "", 8)  # type: ignore[attr-defined]
         cell(f"{'param':<8}{'A':>16}{'baseline':>16}{'Δ':>12}{'z':>8}", 4)
         for pname, a, b, d, z, sig in blk.rows:
             mark = " *" if sig else ""
             cell(f"{pname:<8}{a:>16}{b:>16}{d:>12}{z:>8}{mark}", 4)
         for note in blk.notes:
-            pdf.set_font("Helvetica", "", 9)
+            pdf.set_font("Helvetica", "", 9)  # type: ignore[attr-defined]
             cell(f"- {note}", 4)
-        pdf.ln(1)
+        pdf.ln(1)  # type: ignore[attr-defined]
 
     for fig_path in report.figure_paths:
         if Path(fig_path).exists():
-            pdf.add_page()
-            pdf.image(fig_path, w=180)
+            pdf.add_page()  # type: ignore[attr-defined]
+            pdf.image(fig_path, w=180)  # type: ignore[attr-defined]
 
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 13)
+    pdf.add_page()  # type: ignore[attr-defined]
+    pdf.set_font("Helvetica", "B", 13)  # type: ignore[attr-defined]
     cell("References (BibTeX)", 7)
-    pdf.set_font("Courier", "", 8)
+    pdf.set_font("Courier", "", 8)  # type: ignore[attr-defined]
     cell(report.bibtex, 4)
-    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_font("Helvetica", "B", 13)  # type: ignore[attr-defined]
     cell("Reproducibility manifest", 7)
-    pdf.set_font("Courier", "", 8)
+    pdf.set_font("Courier", "", 8)  # type: ignore[attr-defined]
     cell(report.manifest_json, 4)
-    pdf.output(str(path))
 
 
-def render_comparison_docx(report: ComparisonReportData, path: str | Path) -> None:
-    from .report_docx import _require_docx
+def render_comparison_pdf(report: ComparisonReportData, path: str | Path) -> None:
+    from .report_pdf import new_pdf
 
-    docx = _require_docx()
-    document = docx.Document()  # type: ignore[attr-defined]
-    document.add_heading(report.title, level=0)
-    document.add_paragraph(f"Baseline batch: {report.baseline}")
+    pdf = new_pdf()
+    write_comparison_pdf(pdf, report)
+    pdf.output(str(path))  # type: ignore[attr-defined]
 
-    document.add_heading("Batch summary", level=1)
-    table = document.add_table(rows=1, cols=len(report.batch_header))
+
+def write_comparison_docx(document: object, report: ComparisonReportData, docx: object) -> None:
+    """Write the comparison sections into an existing Word document."""
+    document.add_heading(report.title, level=0)  # type: ignore[attr-defined]
+    document.add_paragraph(f"Baseline batch: {report.baseline}")  # type: ignore[attr-defined]
+
+    document.add_heading("Batch summary", level=1)  # type: ignore[attr-defined]
+    table = document.add_table(rows=1, cols=len(report.batch_header))  # type: ignore[attr-defined]
     table.style = "Light Grid Accent 1"
     for j, h in enumerate(report.batch_header):
         table.rows[0].cells[j].text = h
@@ -229,9 +231,9 @@ def render_comparison_docx(report: ComparisonReportData, path: str | Path) -> No
             cells[j].text = val
 
     for blk in report.diffs:
-        document.add_heading(blk.title, level=1)
-        document.add_paragraph(blk.verdict)
-        t = document.add_table(rows=1, cols=5)
+        document.add_heading(blk.title, level=1)  # type: ignore[attr-defined]
+        document.add_paragraph(blk.verdict)  # type: ignore[attr-defined]
+        t = document.add_table(rows=1, cols=5)  # type: ignore[attr-defined]
         t.style = "Light Grid Accent 1"
         for j, h in enumerate(("parameter", "A", "baseline", "Δ", "z")):
             t.rows[0].cells[j].text = h
@@ -240,17 +242,24 @@ def render_comparison_docx(report: ComparisonReportData, path: str | Path) -> No
             for j, val in enumerate((pname + (" *" if sig else ""), a, b, d, z)):
                 cells[j].text = val
         for note in blk.notes:
-            document.add_paragraph(note, style="List Bullet")
+            document.add_paragraph(note, style="List Bullet")  # type: ignore[attr-defined]
 
     for fig_path in report.figure_paths:
         if Path(fig_path).exists():
             document.add_picture(fig_path, width=docx.shared.Inches(6.0))  # type: ignore[attr-defined]
 
-    document.add_heading("References (BibTeX)", level=1)
-    document.add_paragraph(report.bibtex, style="No Spacing")
-    document.add_heading("Reproducibility manifest", level=1)
-    document.add_paragraph(report.manifest_json, style="No Spacing")
-    document.save(str(path))
+    document.add_heading("References (BibTeX)", level=1)  # type: ignore[attr-defined]
+    document.add_paragraph(report.bibtex, style="No Spacing")  # type: ignore[attr-defined]
+    document.add_heading("Reproducibility manifest", level=1)  # type: ignore[attr-defined]
+    document.add_paragraph(report.manifest_json, style="No Spacing")  # type: ignore[attr-defined]
+
+
+def render_comparison_docx(report: ComparisonReportData, path: str | Path) -> None:
+    from .report_docx import new_docx
+
+    document, docx = new_docx()
+    write_comparison_docx(document, report, docx)
+    document.save(str(path))  # type: ignore[attr-defined]
 
 
 def _embed(fig_path: str) -> str:
@@ -283,7 +292,8 @@ pre { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 6px; paddin
 """
 
 
-def render_comparison_html(report: ComparisonReportData, path: str | Path) -> None:
+def comparison_body_html(report: ComparisonReportData, *, title_tag: str = "h1") -> str:
+    """The comparison content (heading + sections), reusable inside a combined document."""
     diff_html = ""
     for blk in report.diffs:
         drows = tuple(
@@ -296,12 +306,7 @@ def render_comparison_html(report: ComparisonReportData, path: str | Path) -> No
             + "".join(f"<p>⚠ {html.escape(n)}</p>" for n in blk.notes)
         )
     figures = "".join(_embed(fp) for fp in report.figure_paths)
-    doc = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>{html.escape(report.title)}</title><style>{_HTML_CSS}</style></head>
-<body>
-<h1>{html.escape(report.title)}</h1>
+    return f"""<{title_tag}>{html.escape(report.title)}</{title_tag}>
 <p>Baseline batch: <b>{html.escape(report.baseline)}</b></p>
 <h2>Batch summary</h2>
 {_html_table(report.batch_header, report.batch_rows)}
@@ -310,6 +315,12 @@ def render_comparison_html(report: ComparisonReportData, path: str | Path) -> No
 {figures or "<p>(no figures)</p>"}
 <h2>References (BibTeX)</h2><pre>{html.escape(report.bibtex)}</pre>
 <h2>Reproducibility manifest</h2><pre>{html.escape(report.manifest_json)}</pre>
-</body></html>
 """
-    Path(path).write_text(doc, encoding="utf-8")
+
+
+def render_comparison_html(report: ComparisonReportData, path: str | Path) -> None:
+    from .report_html import html_document
+
+    Path(path).write_text(
+        html_document(report.title, comparison_body_html(report)), encoding="utf-8"
+    )

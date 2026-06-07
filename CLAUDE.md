@@ -22,7 +22,7 @@ Use the project venv (`.venv/bin/...`). Install: `pip install -e ".[dev,report,h
 # Library gates (must all pass before committing)
 .venv/bin/ruff check .                      # lints the WHOLE repo (see exclusions in pyproject)
 .venv/bin/mypy dielectric                   # strict
-.venv/bin/python -m pytest                  # 99 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
+.venv/bin/python -m pytest                  # 100 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
 .venv/bin/python -m pytest tests/test_fitting.py::test_conductivity_recovered   # single test
 
 # Backend
@@ -152,7 +152,14 @@ in sync when changing the API.
   `report_pdf.py` has an `_ascii()` map for ε/ω/τ/± etc., and `multi_cell` needs
   `new_x="LMARGIN", new_y="NEXT"`. There are three renderers off the one `ReportData`
   (`assemble_report`): `render_pdf`, `render_docx`, and `render_html` (self-contained, base64-embedded
-  figures, no deps); `services.generate_report` + the `/report?fmt=` route expose all three.
+  figures, no deps); `services.generate_report` + the `/report?fmt=` route expose all three. Each
+  renderer also exposes a **section-writer** (`write_report_*` / `write_comparison_*` /
+  `report_body_html` / `comparison_body_html`) so `campaign_report.py` stitches every batch's report
+  **and** the comparison into one **combined campaign report** (`render_campaign_{pdf,docx,html}`,
+  served at `GET /campaigns/{id}/campaign-report`).
+- **Backend test isolation**: `backend/tests/conftest.py` clears the process-global `STORE` before
+  every test — required because the in-memory store would otherwise leak sets/campaigns across tests
+  (and the batch-name disambiguation would change names a test expects).
 - **scikit-learn / seaborn / statsmodels are intentionally NOT dependencies** — numpy (k·MAD),
   matplotlib, and direct AIC/BIC are the right, simpler tools. Don't add them.
 - **mypy --strict + numpy**: model `epsilon()` returns are wrapped in `np.asarray(..., dtype=

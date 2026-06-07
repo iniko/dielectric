@@ -399,6 +399,37 @@ def test_same_named_batches_stay_distinct_and_compare() -> None:
     assert len(body["differences"]) == 1
 
 
+def test_campaign_report_combines_batches_and_comparison() -> None:
+    a = _upload("h02s19m*.csv", "measurement", limit=10, name="normal")
+    b = _upload("h02v*.csv", "measurement", limit=10, name="diseased")
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [a["id"], b["id"]], "temperature_c": 25.0,
+    }).json()["id"]
+    client.post(f"/api/campaigns/{cid}/analyze", json={}).raise_for_status()
+    for fmt, head in (("pdf", b"%PDF"), ("docx", b"PK\x03\x04")):
+        r = client.get(f"/api/campaigns/{cid}/campaign-report", params={"fmt": fmt})
+        assert r.status_code == 200, r.text
+        assert r.content[:4] == head
+    r = client.get(f"/api/campaigns/{cid}/campaign-report", params={"fmt": "html"})
+    html = r.content.decode()
+    assert html.startswith("<!doctype html>") and "data:image/png;base64," in html
+    # both batches' analysis AND the comparison section are present in the one file
+    assert "Dielectric analysis: normal" in html and "Dielectric analysis: diseased" in html
+    assert "separates over" in html  # comparison verdict
+
+
+def test_campaign_report_single_batch_has_no_comparison() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=10, name="solo")
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [m["id"]], "temperature_c": 25.0,
+    }).json()["id"]
+    client.post(f"/api/campaigns/{cid}/analyze", json={}).raise_for_status()
+    r = client.get(f"/api/campaigns/{cid}/campaign-report", params={"fmt": "html"})
+    html = r.content.decode()
+    assert "Dielectric analysis: solo" in html
+    assert "separates over" not in html  # no comparison with one batch
+
+
 def test_compare_needs_two_sets() -> None:
     one = _upload("h02s19m*.csv", "measurement", limit=8, name="solo")
     cid = client.post("/api/campaigns", json={

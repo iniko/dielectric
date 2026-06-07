@@ -39,6 +39,8 @@ from dielectric.reference.liquids import (
 )
 from dielectric.reference.materials import ReferenceMaterial
 from dielectric.reporting import (
+    ComparisonReportData,
+    ReportData,
     ReproducibilityManifest,
     assemble_comparison_report,
     assemble_report,
@@ -47,6 +49,9 @@ from dielectric.reporting import (
     comparison_overlay_figure,
     difference_figure,
     methods_paragraph,
+    render_campaign_docx,
+    render_campaign_html,
+    render_campaign_pdf,
     render_comparison_docx,
     render_comparison_html,
     render_comparison_pdf,
@@ -775,24 +780,21 @@ def compute_budget(req: schemas.BudgetRequest) -> schemas.BudgetResult:
     )
 
 
-def generate_report(campaign_id: str, sample_id: str, fmt: str) -> str:
-    entry = STORE.analyses.get(campaign_id)
-    if entry is None:
-        raise KeyError("campaign has not been analyzed yet")
-    sample = entry["samples"].get(sample_id)  # type: ignore[index]
-    if sample is None:
-        raise KeyError(f"unknown sample '{sample_id}'")
+def _assemble_sample_report(
+    sample_id: str, sample: dict[str, object], out: str, prefix: str = "s"
+) -> ReportData:
+    """Build one batch's ReportData (figures + manifest); figure files named with ``prefix``."""
     fit, sel, spectrum = sample["fit"], sample["selection"], sample["spectrum"]
     ta = cast(TypeAResult, sample["type_a"])
-    out = tempfile.mkdtemp()
-    bode = os.path.join(out, "bode.png")
-    cole = os.path.join(out, "cole.png")
+    bode = os.path.join(out, f"bode_{prefix}.png")
+    cole = os.path.join(out, f"cole_{prefix}.png")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        save_figure(bode_figure(spectrum, fit, title=sample_id), bode)
-        save_figure(cole_cole_figure(spectrum, fit), cole)
+        save_figure(bode_figure(spectrum, fit, title=sample_id), bode)  # type: ignore[arg-type]
+        save_figure(cole_cole_figure(spectrum, fit), cole)  # type: ignore[arg-type]
     manifest = ReproducibilityManifest.from_fit(
-        fit, timestamp=datetime.now(timezone.utc).isoformat(), data_source=sample_id,
+        cast(FitResult, fit), timestamp=datetime.now(timezone.utc).isoformat(),
+        data_source=sample_id,
         extra={
             "n_repeats_total": str(ta.n_repeats_total),
             "n_repeats_used": str(ta.n_repeats_used),
@@ -801,24 +803,33 @@ def generate_report(campaign_id: str, sample_id: str, fmt: str) -> str:
             "outlier_k": "off" if ta.outlier_k_used is None else f"{ta.outlier_k_used:g}",
         },
     )
-    report = assemble_report(
-        title=f"Dielectric analysis: {sample_id}", fit=fit, selection=sel, manifest=manifest,
-        validation=sample["validation"], kk=sample["kk"], n_repeats=ta.n_repeats_used,
+    return assemble_report(
+        title=f"Dielectric analysis: {sample_id}", fit=cast(FitResult, fit),
+        selection=cast(ModelSelectionResult, sel), manifest=manifest,
+        validation=sample["validation"], kk=sample["kk"], n_repeats=ta.n_repeats_used,  # type: ignore[arg-type]
         n_repeats_total=ta.n_repeats_total, n_excluded=len(ta.excluded_indices),
-        outlier_k=ta.outlier_k_used, band_ghz=sample["band"], figure_paths=(bode, cole),
+        outlier_k=ta.outlier_k_used, band_ghz=sample["band"], figure_paths=(bode, cole),  # type: ignore[arg-type]
     )
+
+
+def generate_report(campaign_id: str, sample_id: str, fmt: str) -> str:
+    entry = STORE.analyses.get(campaign_id)
+    if entry is None:
+        raise KeyError("campaign has not been analyzed yet")
+    sample = entry["samples"].get(sample_id)  # type: ignore[index]
+    if sample is None:
+        raise KeyError(f"unknown sample '{sample_id}'")
+    out = tempfile.mkdtemp()
+    report = _assemble_sample_report(sample_id, sample, out)
     path = os.path.join(out, f"report.{fmt}")
-    if fmt == "docx":
-        render_docx(report, path)
-    elif fmt == "html":
-        render_html(report, path)
-    else:
-        render_pdf(report, path)
+    {"docx": render_docx, "html": render_html}.get(fmt, render_pdf)(report, path)
     return path
 
 
-def generate_comparison_report(campaign_id: str, baseline: str | None, fmt: str) -> str:
-    """Render a campaign-level batch-comparison report (PDF/Word/HTML) from the cached fits."""
+def _assemble_comparison_data(
+    campaign_id: str, baseline: str | None, out: str
+) -> ComparisonReportData:
+    """Build the batch-comparison ReportData (figures into ``out``) from the cached fits."""
     cache = _fits(campaign_id)  # computes a default fit per batch if the step was skipped
     sample_ids = list(cache.keys())
     if len(sample_ids) < 2:
@@ -832,13 +843,11 @@ def generate_comparison_report(campaign_id: str, baseline: str | None, fmt: str)
         for sid in sample_ids
     ]
     base_ta = cast(TypeAResult, cache[base_label]["type_a"])
-    out = tempfile.mkdtemp()
     figs: list[str] = []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        overlay = comparison_overlay_figure([(sid, ta.mean) for sid, _, ta in batches])
         op = os.path.join(out, "overlay.png")
-        save_figure(overlay, op)
+        save_figure(comparison_overlay_figure([(sid, ta.mean) for sid, _, ta in batches]), op)
         figs.append(op)
         for i, (sid, _fit, ta) in enumerate(batches):
             if sid == base_label:
@@ -852,17 +861,42 @@ def generate_comparison_report(campaign_id: str, baseline: str | None, fmt: str)
         data_source=f"batch comparison vs {base_label}",
         extra={"batches": str(sample_ids), "baseline": base_label},
     )
-    report = assemble_comparison_report(
+    return assemble_comparison_report(
         title=f"Batch comparison (baseline: {base_label})", baseline_label=base_label,
         batches=batches, manifest=manifest, figure_paths=tuple(figs),
     )
+
+
+def generate_comparison_report(campaign_id: str, baseline: str | None, fmt: str) -> str:
+    """Render a campaign-level batch-comparison report (PDF/Word/HTML) from the cached fits."""
+    out = tempfile.mkdtemp()
+    report = _assemble_comparison_data(campaign_id, baseline, out)
     path = os.path.join(out, f"comparison.{fmt}")
-    if fmt == "docx":
-        render_comparison_docx(report, path)
-    elif fmt == "html":
-        render_comparison_html(report, path)
-    else:
-        render_comparison_pdf(report, path)
+    {"docx": render_comparison_docx, "html": render_comparison_html}.get(
+        fmt, render_comparison_pdf
+    )(report, path)
+    return path
+
+
+def generate_campaign_report(campaign_id: str, baseline: str | None, fmt: str) -> str:
+    """One combined report: every batch's analysis + the batch comparison (when ≥2 batches)."""
+    entry = STORE.analyses.get(campaign_id)
+    if entry is None:
+        raise KeyError("campaign has not been analyzed yet")
+    samples_cache = cast(dict[str, dict[str, object]], entry["samples"])  # type: ignore[index]
+    out = tempfile.mkdtemp()
+    samples = [
+        _assemble_sample_report(sid, sample, out, prefix=str(i))
+        for i, (sid, sample) in enumerate(samples_cache.items())
+    ]
+    comparison = (
+        _assemble_comparison_data(campaign_id, baseline, out) if len(samples_cache) >= 2 else None
+    )
+    path = os.path.join(out, f"campaign.{fmt}")
+    title = "Campaign report"
+    {"docx": render_campaign_docx, "html": render_campaign_html}.get(fmt, render_campaign_pdf)(
+        title, samples, comparison, path
+    )
     return path
 
 

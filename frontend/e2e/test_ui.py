@@ -149,6 +149,7 @@ with sync_playwright() as p:
     obs.append(("methods paragraph", page.locator("text=non-linear least squares").count() >= 1))
     obs.append(("HTML report download",
                 page.get_by_role("button", name="Download HTML report").count() >= 1))
+    obs.append(("combined campaign report", page.locator("text=Full campaign report").count() >= 1))
     page.screenshot(path="/tmp/diel_step7_report.png", full_page=True)
 
     browser.close()

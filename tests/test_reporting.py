@@ -23,6 +23,9 @@ from dielectric.reporting import (
     methods_paragraph,
     parameter_table_csv,
     parameter_table_latex,
+    render_campaign_docx,
+    render_campaign_html,
+    render_campaign_pdf,
     render_comparison_docx,
     render_comparison_html,
     render_comparison_pdf,
@@ -180,6 +183,46 @@ def test_comparison_report_assembles_and_renders(tmp_path: Path) -> None:
     html = html_path.read_text(encoding="utf-8")
     assert html.startswith("<!doctype html>") and "data:image/png;base64," in html
     assert "diseased" in html
+
+
+def test_campaign_report_combines_samples_and_comparison(tmp_path: Path) -> None:
+    batches = [("normal", *_comparison_batch(70.0, seed=1)),
+               ("diseased", *_comparison_batch(57.0, seed=2))]
+    samples = []
+    fitted: list[tuple[str, object, object]] = []
+    for label, ta, _f in batches:
+        sel = select_model(ta.mean)
+        fit = sel.chosen.result
+        man = ReproducibilityManifest.from_fit(fit, timestamp="2026-06-07T00:00:00Z")
+        fig = tmp_path / f"{label}.png"
+        save_figure(bode_figure(ta.mean, fit), str(fig))
+        samples.append(assemble_report(
+            title=f"Dielectric analysis: {label}", fit=fit, selection=sel, manifest=man,
+            figure_paths=(str(fig),),
+        ))
+        fitted.append((label, fit, ta))
+
+    over = tmp_path / "overlay.png"
+    overlay = comparison_overlay_figure([(lbl, ta.mean) for lbl, ta, _fit in batches])
+    save_figure(overlay, str(over))
+    man2 = ReproducibilityManifest.from_fit(fitted[0][1], timestamp="2026-06-07T00:00:00Z")
+    comp = assemble_comparison_report(
+        title="Batch comparison", baseline_label="normal", batches=fitted, manifest=man2,
+        figure_paths=(str(over),),
+    )
+
+    for fmt, render in (
+        ("pdf", render_campaign_pdf),
+        ("docx", render_campaign_docx),
+        ("html", render_campaign_html),
+    ):
+        p = tmp_path / f"campaign.{fmt}"
+        render("Campaign report", samples, comp, str(p))
+        assert p.stat().st_size > 2000
+    html = (tmp_path / "campaign.html").read_text(encoding="utf-8")
+    assert html.startswith("<!doctype html>") and "data:image/png;base64," in html
+    assert "normal" in html and "diseased" in html  # both batches present
+    assert "separates over" in html  # the comparison verdict is included
 
 
 def test_methods_paragraph_discloses_exclusion() -> None:

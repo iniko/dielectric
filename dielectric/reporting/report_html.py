@@ -57,25 +57,32 @@ def _param_table(report: ReportData) -> str:
     return f"<table><tbody>{rows}</tbody></table>"
 
 
-def render_html(report: ReportData, path: str | Path) -> None:
-    """Write ``report`` as one self-contained HTML file."""
-    validated = report.validation_status.strip().upper().startswith("VALIDATED")
-    status_cls = "ok" if validated else "warn"
-
-    figures = "".join(_embed_figure(fp) for fp in report.figure_paths)
-    notes = "".join(f"<li>{html.escape(n)}</li>" for n in report.extra_notes)
-    notes_block = f"<ul class='notes'>{notes}</ul>" if notes else ""
-
-    doc = f"""<!doctype html>
+def html_document(title: str, body: str) -> str:
+    """Wrap inner ``body`` HTML in a self-contained document (shared CSS + footer)."""
+    return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>{html.escape(report.title)}</title>
+<title>{html.escape(title)}</title>
 <style>{_CSS}</style>
 </head>
 <body>
-<h1>{html.escape(report.title)}</h1>
+{body}
+<footer>{html.escape(_FOOTER)}</footer>
+</body>
+</html>
+"""
+
+
+def report_body_html(report: ReportData, *, title_tag: str = "h1") -> str:
+    """The per-report content (heading + sections), reusable inside a combined document."""
+    validated = report.validation_status.strip().upper().startswith("VALIDATED")
+    status_cls = "ok" if validated else "warn"
+    figures = "".join(_embed_figure(fp) for fp in report.figure_paths)
+    notes = "".join(f"<li>{html.escape(n)}</li>" for n in report.extra_notes)
+    notes_block = f"<ul class='notes'>{notes}</ul>" if notes else ""
+    return f"""<{title_tag}>{html.escape(report.title)}</{title_tag}>
 <p><span class="status {status_cls}">{html.escape(report.validation_status)}</span></p>
 
 <h2>Methods</h2>
@@ -96,9 +103,9 @@ def render_html(report: ReportData, path: str | Path) -> None:
 
 <h2>Reproducibility manifest</h2>
 <pre>{html.escape(report.manifest_json)}</pre>
-
-<footer>{html.escape(_FOOTER)}</footer>
-</body>
-</html>
 """
-    Path(path).write_text(doc, encoding="utf-8")
+
+
+def render_html(report: ReportData, path: str | Path) -> None:
+    """Write ``report`` as one self-contained HTML file."""
+    Path(path).write_text(html_document(report.title, report_body_html(report)), encoding="utf-8")

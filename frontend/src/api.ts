@@ -153,6 +153,10 @@ export function compareReportUrl(
   return `/api/campaigns/${campaignId}/compare/report?baseline=${encodeURIComponent(baseline)}&fmt=${fmt}`;
 }
 
+export function campaignReportUrl(campaignId: string, fmt: "pdf" | "docx" | "html"): string {
+  return `/api/campaigns/${campaignId}/campaign-report?fmt=${fmt}`;
+}
+
 export async function computeBudget(body: {
   measurand: string;
   nominal_value: number;
