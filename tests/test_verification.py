@@ -17,10 +17,26 @@ from dielectric.verification import (
     kramers_kronig_check,
     reference_overlay,
     validate_campaign,
+    validate_mean,
     validate_set,
 )
 
 F = np.geomspace(1e8, 1e11, 120)
+
+
+def test_validate_mean_honors_reference_override() -> None:
+    """A saline spectrum passes against saline but fails against water (no DC conductivity)."""
+    saline = get("saline", molarity=0.154, temperature_c=25.0)
+    mean = Spectrum(F, np.asarray(saline.model.epsilon(F)))
+    good = validate_mean(
+        mean, set_id="qc", reference="saline", reference_kwargs={"molarity": 0.154},
+        temperature_c=25.0,
+    )
+    assert good.passed and good.set_id == "qc"
+    assert good.eps_real_rms < 1e-6
+    # re-validate the SAME spectrum against a different standard → fails (σ_DC mismatch)
+    bad = validate_mean(mean, set_id="qc", reference="water", temperature_c=25.0)
+    assert not bad.passed
 
 
 def test_reference_overlay_self_match_is_near_zero() -> None:

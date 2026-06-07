@@ -79,7 +79,7 @@ def test_full_analysis_flow() -> None:
     assert any(r["flag"] == "degenerate" for r in result["ranking"])
 
     # report download works
-    pdf = client.get(f"/api/campaigns/{cid}/report", params={"sample": "measurement", "fmt": "pdf"})
+    pdf = client.get(f"/api/campaigns/{cid}/report", params={"sample": meas["name"], "fmt": "pdf"})
     assert pdf.status_code == 200
     assert pdf.content[:4] == b"%PDF"
 
@@ -210,10 +210,9 @@ def test_saline_sweep_is_ranked() -> None:
 
 def test_html_report_is_self_contained() -> None:
     cid, _m, _v = _campaign(with_validation=False)
-    client.post(f"/api/campaigns/{cid}/analyze", json={}).raise_for_status()
-    resp = client.get(
-        f"/api/campaigns/{cid}/report", params={"sample": "measurement", "fmt": "html"}
-    )
+    analysis = client.post(f"/api/campaigns/{cid}/analyze", json={}).json()
+    sample = analysis["results"][0]["sample_id"]
+    resp = client.get(f"/api/campaigns/{cid}/report", params={"sample": sample, "fmt": "html"})
     assert resp.status_code == 200
     text = resp.content.decode("utf-8")
     assert text.startswith("<!doctype html>")
@@ -324,6 +323,65 @@ def test_comparison_report_renders_all_formats() -> None:
     assert "data:image/png;base64," in html  # figures embedded
     assert "diseased" in html and "normal" in html
     assert "separates over" in html  # the verdict sentence
+
+
+def test_validation_config_edit_and_link() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=10, name="muscle")
+    v = _upload("h02v*.csv", "validation", limit=10, name="saline-qc",
+                reference="saline", molarity="0.154")
+    vid = v["id"]
+
+    # default saline detail
+    d = client.get(f"/api/sets/{vid}/validation").json()
+    assert d["reference_label"] == "saline_0.154M"
+    assert d["config"]["mass_percent"] == pytest.approx(0.9)
+    assert d["saline_sweep"] is not None
+
+    # edit by mass % and link to the muscle batch
+    edited = client.post(f"/api/sets/{vid}/validation", json={
+        "reference": "saline", "mass_percent": 0.9, "temperature_c": 25.0,
+        "measurement_set_ids": [m["id"]],
+    }).json()
+    assert edited["config"]["molarity"] == pytest.approx(0.154)
+    assert edited["linked_batches"] == [m["id"]]
+    assert edited["verdict"]["passed"]
+
+    # switch the reference to water → no DC σ → fails; no saline sweep
+    water = client.post(f"/api/sets/{vid}/validation", json={
+        "reference": "water", "temperature_c": 25.0, "measurement_set_ids": [m["id"]],
+    }).json()
+    assert not water["verdict"]["passed"]
+    assert water["saline_sweep"] is None
+
+    # seawater accepts salinity
+    sea = client.post(f"/api/sets/{vid}/validation", json={
+        "reference": "seawater", "salinity_psu": 35.0, "temperature_c": 20.0,
+        "measurement_set_ids": [m["id"]],
+    }).json()
+    assert sea["config"]["salinity_psu"] == 35.0
+
+
+def test_validation_edit_propagates_to_campaign_banner() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=10, name="muscle2")
+    v = _upload("h02v*.csv", "validation", limit=10, name="qc2",
+                reference="saline", molarity="0.154")
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [m["id"]], "validation_set_ids": [v["id"]], "temperature_c": 37.0,
+    }).json()["id"]
+    # baseline saline → validates
+    assert client.post(f"/api/campaigns/{cid}/analyze", json={}).json()["validation"]["validated"]
+    # edit the validation reference to water → the campaign banner flips to NOT VALIDATED
+    client.post(f"/api/sets/{v['id']}/validation", json={
+        "reference": "water", "temperature_c": 25.0, "measurement_set_ids": [m["id"]],
+    }).raise_for_status()
+    again = client.post(f"/api/campaigns/{cid}/analyze", json={}).json()["validation"]
+    assert not again["validated"]
+    assert again["verdicts"][0]["linked_batches"] == [m["id"]]
+
+
+def test_validation_detail_404_for_measurement() -> None:
+    m = _upload("h02s19m*.csv", "measurement", limit=8, name="solo2")
+    assert client.get(f"/api/sets/{m['id']}/validation").status_code == 404
 
 
 def test_same_named_batches_stay_distinct_and_compare() -> None:

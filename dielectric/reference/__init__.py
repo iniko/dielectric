@@ -8,7 +8,15 @@ sources and the (network-gated) refresh that promotes VERIFY values to HIGH.
 from __future__ import annotations
 
 from .database import get, list_materials, query
-from .liquids import ethanol, methanol, saline, seawater, water
+from .liquids import (
+    ethanol,
+    mass_percent_from_molarity,
+    methanol,
+    molarity_from_mass_percent,
+    saline,
+    seawater,
+    water,
+)
 from .materials import ReferenceMaterial
 from .tissues import all_tissues
 
@@ -18,7 +26,9 @@ __all__ = [
     "ethanol",
     "get",
     "list_materials",
+    "mass_percent_from_molarity",
     "methanol",
+    "molarity_from_mass_percent",
     "query",
     "saline",
     "seawater",

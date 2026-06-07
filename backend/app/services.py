@@ -33,6 +33,10 @@ from dielectric.io.campaign import (
 )
 from dielectric.io.csv_loader import load_agilent_85070
 from dielectric.reference.database import get, query
+from dielectric.reference.liquids import (
+    mass_percent_from_molarity,
+    molarity_from_mass_percent,
+)
 from dielectric.reference.materials import ReferenceMaterial
 from dielectric.reporting import (
     ReproducibilityManifest,
@@ -66,11 +70,13 @@ from dielectric.verification import (
     find_closest_materials,
     kramers_kronig_check,
     reference_overlay,
-    validate_campaign,
+    validate_mean,
 )
+from dielectric.verification.literature import ReferenceOverlay
+from dielectric.verification.validation import CampaignValidation, ValidationVerdict
 
 from . import schemas
-from .store import STORE, ScreeningChoice
+from .store import STORE, ScreeningChoice, ValidationConfig
 
 
 def _screened_type_a(
@@ -136,7 +142,8 @@ def make_measurement_set(
 
 
 def make_validation_set(
-    files: list[tuple[str, bytes]], name: str, reference: str, molarity: float, temperature_c: float
+    files: list[tuple[str, bytes]], name: str, reference: str, molarity: float,
+    temperature_c: float, salinity_psu: float | None = None,
 ) -> tuple[str, bool]:
     spectra = []
     corrected = False
@@ -147,7 +154,12 @@ def make_validation_set(
     kwargs = {"molarity": molarity} if reference == "saline" else {}
     vs = ValidationSet(name, tuple(spectra), reference, kwargs, temperature_c,
                        tuple(fn for fn, _ in files))
-    return STORE.add_validation(vs), corrected
+    vid = STORE.add_validation(vs)
+    STORE.validation_config[vid] = ValidationConfig(  # seed the editable config
+        reference=reference, molarity=molarity, salinity_psu=salinity_psu,
+        temperature_c=temperature_c,
+    )
+    return vid, corrected
 
 
 def set_summary(
@@ -453,11 +465,15 @@ def reference_match_for_set(
         max_abs_d_loss=_finite(ov.max_abs_d_loss),
         in_band_fraction=ov.in_band_fraction, temperature_delta_c=ov.temperature_delta_c,
         notes=list(ov.notes),
-        overlay=schemas.RefOverlay(
-            frequency_hz=ov.frequency_hz.tolist(), meas_eps_real=ov.meas_eps_real.tolist(),
-            meas_loss=ov.meas_loss.tolist(), ref_eps_real=ov.ref_eps_real.tolist(),
-            ref_loss=ov.ref_loss.tolist(), rel_error_pct=ov.rel_error_pct.tolist(),
-        ),
+        overlay=_ref_overlay(ov),
+    )
+
+
+def _ref_overlay(ov: ReferenceOverlay) -> schemas.RefOverlay:
+    return schemas.RefOverlay(
+        frequency_hz=ov.frequency_hz.tolist(), meas_eps_real=ov.meas_eps_real.tolist(),
+        meas_loss=ov.meas_loss.tolist(), ref_eps_real=ov.ref_eps_real.tolist(),
+        ref_loss=ov.ref_loss.tolist(), rel_error_pct=ov.rel_error_pct.tolist(),
     )
 
 
@@ -482,6 +498,111 @@ def saline_sweep_for_set(set_id: str) -> schemas.SalineSweepOut:
                 ))
     rows.sort(key=lambda r: r.rms)
     return schemas.SalineSweepOut(set_id=set_id, rows=rows)
+
+
+# ---- editable, batch-linked validation --------------------------------------------------------
+
+
+def _config_kwargs(cfg: ValidationConfig) -> dict[str, float]:
+    """Reference-specific kwargs for `database.get` from a stored validation config."""
+    if cfg.reference == "saline":
+        return {"molarity": cfg.molarity}
+    if cfg.reference == "seawater" and cfg.salinity_psu is not None:
+        return {"salinity_psu": cfg.salinity_psu}
+    return {}
+
+
+def _material_from_config(cfg: ValidationConfig) -> ReferenceMaterial:
+    kwargs = {**_config_kwargs(cfg), "temperature_c": cfg.temperature_c}
+    try:
+        return get(cfg.reference, **kwargs)
+    except (TypeError, ValueError):
+        return get(cfg.reference)
+
+
+def _verdict_for(vset: ValidationSet, vid: str | None, cfg: ValidationConfig) -> ValidationVerdict:
+    mean = _screened_type_a(vset, vid).mean
+    return validate_mean(
+        mean, set_id=vset.sample_id, reference=cfg.reference,
+        reference_kwargs=_config_kwargs(cfg), temperature_c=cfg.temperature_c,
+    )
+
+
+def _configured_campaign_validation(campaign: Campaign) -> CampaignValidation:
+    """Validate each set against its **stored (editable) config**, not the baked-in reference."""
+    verdicts = tuple(
+        _verdict_for(vs, STORE.set_id_of(vs), STORE.validation_config_for(STORE.set_id_of(vs)))
+        for vs in campaign.validations
+    )
+    validated = bool(verdicts) and all(v.passed for v in verdicts)
+    if not verdicts:
+        status = "NOT VALIDATED — no reference QC set was provided."
+    elif validated:
+        status = f"VALIDATED — all {len(verdicts)} reference QC set(s) passed."
+    else:
+        n_fail = sum(not v.passed for v in verdicts)
+        status = f"NOT VALIDATED — {n_fail}/{len(verdicts)} reference QC set(s) failed."
+    return CampaignValidation(validated=validated, verdicts=verdicts, status=status)
+
+
+def _config_out(cfg: ValidationConfig) -> schemas.ValidationConfigOut:
+    saline = cfg.reference == "saline"
+    return schemas.ValidationConfigOut(
+        reference=cfg.reference,
+        molarity=cfg.molarity if saline else None,
+        mass_percent=mass_percent_from_molarity(cfg.molarity) if saline else None,
+        salinity_psu=cfg.salinity_psu if cfg.reference == "seawater" else None,
+        temperature_c=cfg.temperature_c,
+    )
+
+
+def _verdict_out(v: ValidationVerdict, linked: list[str]) -> schemas.ValidationVerdictOut:
+    return schemas.ValidationVerdictOut(
+        set_id=v.set_id, reference=v.reference, passed=v.passed,
+        eps_real_rms=_finite(v.eps_real_rms), sigma_measured=_finite(v.sigma_measured),
+        sigma_reference=_finite(v.sigma_reference), notes=list(v.notes), linked_batches=linked,
+    )
+
+
+def validation_detail(set_id: str) -> schemas.ValidationDetailOut:
+    """Per validation set: verdict + reference overlay (+ saline sweep) under its current config."""
+    if set_id not in STORE.validation_sets:
+        raise KeyError(f"unknown validation set '{set_id}'")
+    vset = STORE.validation_sets[set_id]
+    cfg = STORE.validation_config_for(set_id)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        verdict = _verdict_for(vset, set_id, cfg)
+        material = _material_from_config(cfg)
+        mean = _screened_type_a(vset, set_id).mean
+        ov = reference_overlay(mean, material, target_temperature_c=cfg.temperature_c)
+        sweep = saline_sweep_for_set(set_id).rows if cfg.reference == "saline" else None
+    linked = list(cfg.measurement_set_ids)
+    return schemas.ValidationDetailOut(
+        set_id=set_id, name=vset.sample_id, reference_label=ov.material,
+        confidence=ov.confidence.value, config=_config_out(cfg),
+        verdict=_verdict_out(verdict, linked), overlay=_ref_overlay(ov),
+        saline_sweep=sweep, linked_batches=linked,
+    )
+
+
+def set_validation_config(
+    set_id: str, req: schemas.ValidationConfigRequest
+) -> schemas.ValidationDetailOut:
+    """Persist an edited validation reference + batch link, invalidate caches, return the detail."""
+    if set_id not in STORE.validation_sets:
+        raise KeyError(f"unknown validation set '{set_id}'")
+    molarity = req.molarity
+    if req.mass_percent is not None:
+        molarity = molarity_from_mass_percent(req.mass_percent)
+    if molarity is None:
+        molarity = STORE.validation_config_for(set_id).molarity  # keep prior on a non-saline edit
+    STORE.validation_config[set_id] = ValidationConfig(
+        reference=req.reference, molarity=molarity, salinity_psu=req.salinity_psu,
+        temperature_c=req.temperature_c, measurement_set_ids=tuple(req.measurement_set_ids),
+    )
+    STORE.invalidate_caches_for_set(set_id)
+    return validation_detail(set_id)
 
 
 def _param_summary(fit: FitResult) -> schemas.ParamSummary:
@@ -564,6 +685,7 @@ def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.C
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        cv = _configured_campaign_validation(campaign) if campaign.has_validation else None
         for ms in campaign.measurements:
             ta = _screened_type_a(ms)
             spectrum = ta.mean
@@ -572,7 +694,6 @@ def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.C
             kk = kramers_kronig_check(spectrum, model=fit.model)
             closest = find_closest_materials(spectrum, material_class="tissue",
                                              target_temperature_c=temp, top=3)
-            cv = validate_campaign(campaign) if campaign.has_validation else None
             band = (spectrum.band_hz[0] / 1e9, spectrum.band_hz[1] / 1e9)
             methods = methods_paragraph(
                 fit, selection=sel, kk=kk, validation=cv,
@@ -614,18 +735,13 @@ def _validation_out(campaign: Campaign) -> schemas.ValidationOut:
         return schemas.ValidationOut(validated=False,
                                      status="NOT VALIDATED — no reference QC set provided.",
                                      verdicts=[])
-    cv = validate_campaign(campaign)
-    return schemas.ValidationOut(
-        validated=cv.validated, status=cv.status,
-        verdicts=[
-            schemas.ValidationVerdictOut(
-                set_id=v.set_id, reference=v.reference, passed=v.passed,
-                eps_real_rms=v.eps_real_rms, sigma_measured=v.sigma_measured,
-                sigma_reference=v.sigma_reference, notes=list(v.notes),
-            )
-            for v in cv.verdicts
-        ],
-    )
+    verdicts: list[schemas.ValidationVerdictOut] = []
+    for vs in campaign.validations:
+        vid = STORE.set_id_of(vs)
+        cfg = STORE.validation_config_for(vid)
+        verdicts.append(_verdict_out(_verdict_for(vs, vid, cfg), list(cfg.measurement_set_ids)))
+    cv = _configured_campaign_validation(campaign)
+    return schemas.ValidationOut(validated=cv.validated, status=cv.status, verdicts=verdicts)
 
 
 def list_materials() -> list[schemas.MaterialOut]:

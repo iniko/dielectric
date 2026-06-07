@@ -15,6 +15,22 @@ from .materials import ReferenceMaterial
 
 _BAND = (1.0e8, 2.5e10)
 
+# Physiological saline anchors the (linear) NaCl molarity↔mass-% conversion: 0.154 M ≡ 0.9 % w/w.
+# A good approximation for the dilute saline used in probe validation; the salinity model itself is
+# linear in molarity (see `saline`).
+_PHYSIOLOGICAL_MOLARITY = 0.154
+_PHYSIOLOGICAL_MASS_PCT = 0.9
+
+
+def mass_percent_from_molarity(molarity: float) -> float:
+    """NaCl mass fraction [% w/w] for a saline molarity [mol/L] (0.154 M ≡ 0.9 % w/w)."""
+    return molarity / _PHYSIOLOGICAL_MOLARITY * _PHYSIOLOGICAL_MASS_PCT
+
+
+def molarity_from_mass_percent(mass_pct: float) -> float:
+    """Saline molarity [mol/L] for an NaCl mass fraction [% w/w] (0.9 % w/w ≡ 0.154 M)."""
+    return mass_pct / _PHYSIOLOGICAL_MASS_PCT * _PHYSIOLOGICAL_MOLARITY
+
 KAATZE_1989 = Provenance(
     authors="Kaatze, U.",
     year=1989,
@@ -85,7 +101,7 @@ def saline(molarity: float = 0.154, temperature_c: float = 25.0) -> ReferenceMat
     sigma_25 = 10.5 * molarity * (2.718281828 ** (-0.4 * molarity))  # S/m at 25 °C (approx)
     sigma = sigma_25 * (1.0 + 0.02 * (temperature_c - 25.0))  # ~+2 %/°C
     model = MultiPoleRelaxation(eps_inf, ((eps_s - eps_inf, tau, 0.0),), sigma_dc=sigma)
-    pct = molarity / 0.154 * 0.9
+    pct = mass_percent_from_molarity(molarity)
     return ReferenceMaterial(
         name=f"saline_{molarity:g}M",
         model=model,

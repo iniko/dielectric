@@ -6,8 +6,23 @@ import numpy as np
 import pytest
 
 from dielectric.models.provenance import Confidence
-from dielectric.reference import get, list_materials, query, water
+from dielectric.reference import (
+    get,
+    list_materials,
+    mass_percent_from_molarity,
+    molarity_from_mass_percent,
+    query,
+    water,
+)
 from dielectric.reference._updater import refresh_from_sources
+
+
+def test_saline_molarity_mass_percent_conversion() -> None:
+    # physiological anchor: 0.154 mol/L ≡ 0.9 % w/w NaCl
+    assert mass_percent_from_molarity(0.154) == pytest.approx(0.9)
+    assert molarity_from_mass_percent(0.9) == pytest.approx(0.154)
+    for m in (0.05, 0.1, 0.154, 0.5):  # round-trips
+        assert molarity_from_mass_percent(mass_percent_from_molarity(m)) == pytest.approx(m)
 
 F = np.array([2e8, 1e9, 1e10, 2e10])
 

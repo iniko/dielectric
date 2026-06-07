@@ -22,6 +22,17 @@ class ScreeningChoice:
 
 
 @dataclass
+class ValidationConfig:
+    """A validation set's editable reference + the measurement batch(es) it validates."""
+
+    reference: str = "saline"
+    molarity: float = 0.154  # for saline (mol/L)
+    salinity_psu: float | None = None  # for seawater
+    temperature_c: float = 25.0
+    measurement_set_ids: tuple[str, ...] = ()  # batches this validation is linked to
+
+
+@dataclass
 class Store:
     measurement_sets: dict[str, MeasurementSet] = field(default_factory=dict)
     validation_sets: dict[str, ValidationSet] = field(default_factory=dict)
@@ -30,12 +41,19 @@ class Store:
     # campaign_id -> {sample_id -> {"fit": ..., "spectrum": ..., ...}}
     fits: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     screening: dict[str, ScreeningChoice] = field(default_factory=dict)  # set_id -> choice
+    # validation set_id -> editable reference config
+    validation_config: dict[str, ValidationConfig] = field(default_factory=dict)
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:12]
 
     def screening_for(self, set_id: str | None) -> ScreeningChoice:
         return self.screening.get(set_id, ScreeningChoice()) if set_id else ScreeningChoice()
+
+    def validation_config_for(self, set_id: str | None) -> ValidationConfig:
+        if not set_id:
+            return ValidationConfig()
+        return self.validation_config.get(set_id, ValidationConfig())
 
     def set_id_of(self, obj: object) -> str | None:
         """Reverse-lookup a stored set's id by object identity (campaigns hold the objects)."""

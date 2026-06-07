@@ -45,6 +45,7 @@ async def upload_set(
     reference: str = Form("saline"),
     molarity: float = Form(0.154),
     temperature_c: float = Form(25.0),
+    salinity_psu: float | None = Form(None),
 ) -> schemas.SetSummary:
     if role not in ("measurement", "validation"):
         raise HTTPException(400, "role must be 'measurement' or 'validation'")
@@ -57,7 +58,7 @@ async def upload_set(
             obj: object = STORE.measurement_sets[sid]
         else:
             sid, corrected = services.make_validation_set(
-                payload, name, reference, molarity, temperature_c
+                payload, name, reference, molarity, temperature_c, salinity_psu
             )
             obj = STORE.validation_sets[sid]
     except Exception as exc:  # malformed upload
@@ -127,6 +128,26 @@ def set_screening(set_id: str, req: schemas.ScreeningRequest) -> schemas.Repeats
         return services.set_screening(set_id, req)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/sets/{set_id}/validation", response_model=schemas.ValidationDetailOut)
+def get_validation(set_id: str) -> schemas.ValidationDetailOut:
+    try:
+        return services.validation_detail(set_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/sets/{set_id}/validation", response_model=schemas.ValidationDetailOut)
+def set_validation(
+    set_id: str, req: schemas.ValidationConfigRequest
+) -> schemas.ValidationDetailOut:
+    try:
+        return services.set_validation_config(set_id, req)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, f"could not resolve reference '{req.reference}': {exc}") from exc
 
 
 @app.post("/api/sets/{set_id}/reference-match", response_model=schemas.ReferenceMatchOut)

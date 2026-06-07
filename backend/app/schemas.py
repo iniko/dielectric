@@ -95,6 +95,7 @@ class ValidationVerdictOut(BaseModel):
     sigma_measured: float
     sigma_reference: float
     notes: list[str]
+    linked_batches: list[str] = Field(default_factory=list)  # measurement sample names it validates
 
 
 class ValidationOut(BaseModel):
@@ -303,6 +304,39 @@ class SalineSweepRow(BaseModel):
 class SalineSweepOut(BaseModel):
     set_id: str
     rows: list[SalineSweepRow]  # sorted by rms ascending
+
+
+# ---- editable, batch-linked validation --------------------------------------------------------
+
+
+class ValidationConfigRequest(BaseModel):
+    reference: str = "saline"
+    molarity: float | None = None  # saline, mol/L (one of molarity/mass_percent)
+    mass_percent: float | None = None  # saline, % w/w NaCl
+    salinity_psu: float | None = None  # seawater
+    temperature_c: float = 25.0
+    # measurement batch ids this validation validates
+    measurement_set_ids: list[str] = Field(default_factory=list)
+
+
+class ValidationConfigOut(BaseModel):
+    reference: str
+    molarity: float | None = None
+    mass_percent: float | None = None
+    salinity_psu: float | None = None
+    temperature_c: float
+
+
+class ValidationDetailOut(BaseModel):
+    set_id: str
+    name: str
+    reference_label: str
+    confidence: str
+    config: ValidationConfigOut
+    verdict: ValidationVerdictOut
+    overlay: RefOverlay
+    saline_sweep: list[SalineSweepRow] | None = None
+    linked_batches: list[str]  # measurement set ids
 
 
 # ---- batch comparison (normal vs diseased, etc.) ----------------------------------------------
