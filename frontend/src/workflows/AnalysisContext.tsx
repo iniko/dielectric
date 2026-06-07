@@ -31,6 +31,11 @@ interface AnalysisState {
   analysis: CampaignAnalysis | null;
   screeningVersion: number; // bumped when a set's repeat screening changes (invalidates downstream)
   bumpScreening: () => void;
+  validationVersion: number; // bumped when a validation set's reference config changes
+  bumpValidation: () => void;
+  validationLinks: Record<string, string>; // validation set id -> measurement batch id
+  attachValidation: (v: SetSummary, batchId: string) => void;
+  detachValidation: (id: string) => void;
   ensureCampaign: () => Promise<string>;
   ensureFit: () => Promise<FitOut>;
   ensureAnalysis: (force?: boolean) => Promise<CampaignAnalysis>;
@@ -52,6 +57,8 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   const [fit, setFit] = useState<FitOut | null>(null);
   const [analysis, setAnalysis] = useState<CampaignAnalysis | null>(null);
   const [screeningVersion, setScreeningVersion] = useState(0);
+  const [validationVersion, setValidationVersion] = useState(0);
+  const [validationLinks, setValidationLinks] = useState<Record<string, string>>({});
 
   // Cache keys guard against recreating the campaign / refitting when nothing relevant changed.
   const cache = useRef({ cid: null as string | null, campaignSig: "", fitSig: "", analysisSig: "" });
@@ -64,6 +71,20 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   const removeSet = useCallback((role: "measurement" | "validation", id: string) => {
     if (role === "measurement") setMeasurements((x) => x.filter((m) => m.id !== id));
     else setValidations((x) => x.filter((v) => v.id !== id));
+  }, []);
+
+  const attachValidation = useCallback((v: SetSummary, batchId: string) => {
+    setValidations((x) => [...x, v]);
+    setValidationLinks((m) => ({ ...m, [v.id]: batchId }));
+  }, []);
+
+  const detachValidation = useCallback((id: string) => {
+    setValidations((x) => x.filter((v) => v.id !== id));
+    setValidationLinks((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
   }, []);
 
   const ensureCampaign = useCallback(async () => {
@@ -91,8 +112,9 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
         resolveModel(fitReq),
         fitReq.poles ? Number(fitReq.poles) : null,
         screeningVersion, // screening change → new mean → refetch fit/analysis/compare
+        validationVersion, // validation reference edit → refetch the banner/report
       ]),
-    [fitReq, screeningVersion],
+    [fitReq, screeningVersion, validationVersion],
   );
 
   const ensureFit = useCallback(async () => {
@@ -137,6 +159,11 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     analysis,
     screeningVersion,
     bumpScreening: () => setScreeningVersion((v) => v + 1),
+    validationVersion,
+    bumpValidation: () => setValidationVersion((v) => v + 1),
+    validationLinks,
+    attachValidation,
+    detachValidation,
     ensureCampaign,
     ensureFit,
     ensureAnalysis,

@@ -43,32 +43,34 @@ with sync_playwright() as p:
     obs.append(("budget table present",
                 page.locator("text=combined standard uncertainty").count() >= 1))
 
-    # (3) Analysis tab — step 1: Load
+    # (3) Analysis tab — step 1: Load (batch-centric)
     page.get_by_role("button", name="Dielectric Analysis").click()
     page.wait_for_timeout(500)
-    file_inputs = page.locator('input[type="file"]')
-    obs.append(("two file dropzones (measurement + validation)", file_inputs.count() == 2))
 
     # batch A
-    file_inputs.nth(0).set_input_files(meas)
-    page.wait_for_timeout(600)
-    obs.append(("staged file table", page.locator("text=Staged files").count() >= 1))
-    page.get_by_role("button", name="Load measurement set").click()
+    page.locator('input[type="file"]').first.set_input_files(meas)
+    page.wait_for_timeout(500)
+    obs.append(("staged → Load batch button",
+                page.get_by_role("button", name="Load batch").count() >= 1))
+    page.get_by_role("button", name="Load batch").click()
     page.wait_for_selector("text=/\\d+\\/\\d+ repeats/", timeout=15000)
-    obs.append(("measurement set card", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 1))
+    obs.append(("batch A card", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 1))
 
-    # batch B (a second measurement set → enables the Compare step)
-    file_inputs.nth(0).set_input_files(val)
-    page.wait_for_timeout(600)
-    page.get_by_role("button", name="Load measurement set").click()
+    # batch B (second batch → enables Compare)
+    page.locator('input[type="file"]').first.set_input_files(val)
+    page.wait_for_timeout(500)
+    page.get_by_role("button", name="Load batch").click()
     page.wait_for_timeout(2000)
-    obs.append(("two measurement set cards", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 2))
+    obs.append(("two batch cards", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 2))
 
-    # validation set (for the QC step)
-    file_inputs.nth(1).set_input_files(val)
-    page.wait_for_timeout(600)
-    page.get_by_role("button", name="Load validation set").click()
-    page.wait_for_timeout(1500)
+    # attach a validation set to batch A
+    page.get_by_role("button", name="Attach validation (optional)").first.click()
+    page.wait_for_timeout(400)
+    page.locator('input[type="file"]').last.set_input_files(val)
+    page.wait_for_timeout(400)
+    page.get_by_role("button", name="Attach validation", exact=True).click()
+    page.wait_for_selector("text=Attached validation", timeout=15000)
+    obs.append(("validation attached to batch", page.locator("text=Attached validation").count() >= 1))
     page.screenshot(path="/tmp/diel_step1_load.png", full_page=True)
 
     # (4) step 2: Repeat statistics — transparent screening table + controls
@@ -106,12 +108,18 @@ with sync_playwright() as p:
     obs.append(("KK consistent badge", page.locator("text=KK consistent").count() >= 1))
     page.screenshot(path="/tmp/diel_step4_kk.png", full_page=True)
 
-    # (7) step 5: Validation
+    # (7) step 5: Validation — per-batch verdict + editable reference card
     step(page, "Validation", wait_selector="text=QC set(s) passed")
     banner_text = page.locator("text=QC set(s) passed").first.inner_text()
     obs.append((f"validation banner = '{banner_text[:50]}'",
                 "VALIDATED" in banner_text and "NOT VALIDATED" not in banner_text))
-    obs.append(("saline sweep table", page.locator("text=Saline best-match sweep").count() >= 1))
+    obs.append(("per-batch PASS verdict", page.locator("text=PASS").count() >= 1))
+    obs.append(("saline sweep in card", page.locator("text=Saline best-match sweep").count() >= 1))
+    obs.append(("editable saline input", page.locator("text=molarity (mol/L)").count() >= 1))
+    # flip the saline molarity ↔ mass-% toggle and confirm the field re-labels
+    page.get_by_role("button", name="M", exact=True).first.click()
+    page.wait_for_timeout(2000)
+    obs.append(("saline %/M toggle", page.locator("text=NaCl (% w/w)").count() >= 1))
     page.screenshot(path="/tmp/diel_step5_validation.png", full_page=True)
 
     # (8) step 6: Reference match

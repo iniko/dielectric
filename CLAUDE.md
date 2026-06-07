@@ -22,7 +22,7 @@ Use the project venv (`.venv/bin/...`). Install: `pip install -e ".[dev,report,h
 # Library gates (must all pass before committing)
 .venv/bin/ruff check .                      # lints the WHOLE repo (see exclusions in pyproject)
 .venv/bin/mypy dielectric                   # strict
-.venv/bin/python -m pytest                  # 97 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
+.venv/bin/python -m pytest                  # 99 lib tests, coverage gate 85% (CI: --cov-fail-under=85)
 .venv/bin/python -m pytest tests/test_fitting.py::test_conductivity_recovered   # single test
 
 # Backend
@@ -97,7 +97,10 @@ UI: `GET /sets/{id}/repeats` (Type A band + distribution), `POST /campaigns/{id}
 caches the fit in `STORE.fits`), `GET /campaigns/{id}/kk` (predicted-vs-measured ε′ arrays),
 `POST /sets/{id}/reference-match`, `POST /sets/{id}/saline-sweep`,
 `POST /campaigns/{id}/compare` (batch-vs-batch), `POST /sets/{id}/screening` (set the repeat
-outlier-screening choice → invalidates dependent fit/analysis caches), and
+outlier-screening choice → invalidates dependent fit/analysis caches),
+`GET`/`POST /sets/{id}/validation` (a validation set's **editable** reference config — saline by
+molarity or mass %, seawater salinity, any standard — linked to measurement batch ids; recomputes the
+verdict+overlay+sweep and invalidates caches so the banner/report update live), and
 `GET /campaigns/{id}/compare/report` (batch-comparison report, pdf|docx|html). Numerics for these
 live in the library
 (`uncertainty.typea.confidence_band`/`repeat_distribution`, `verification.reference_overlay`,
@@ -113,8 +116,12 @@ with shared state in `AnalysisContext.tsx`
 (`ensureCampaign`/`ensureFit`/`ensureAnalysis` memoize backend calls by a signature of set-ids +
 fit request). Each step lives in `workflows/steps/`. BudgetWorkflow = live GUM sandbox. Plotly via
 `react-plotly.js/factory` + `plotly.js-dist-min` (types declared in `shims.d.ts`); plot components in
-`components/Plots.tsx`. The Load step stages files client-side (per-file × unload) and only uploads a
-set on "Load". Model customization is **constrained** (family + poles + DC-σ toggle); fixing
+`components/Plots.tsx`. The Load step is **batch-centric**: it stages files client-side (per-file ×
+unload) and each measurement *batch* card can have a validation set **attached** to it (its reference
+config) — so it's explicit which batch a validation QC belongs to, and the Validation step lets you
+**edit** that reference live. NB: measurement batch names are auto-disambiguated server-side
+(`make_measurement_set`), because the fits cache is keyed by sample name — same-named batches would
+otherwise collapse and break the comparison. Model customization is **constrained** (family + poles + DC-σ toggle); fixing
 individual parameters is deliberately rejected backend-side. A global, persisted display preference
 (`preferences.tsx`, `localStorage`) toggles the lossy quantity between **effective conductivity σ
 (default)** and dielectric loss ε″; it's a pure client-side conversion (`σ = 2π·f·ε₀·ε″`) threaded as

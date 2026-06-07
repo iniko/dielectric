@@ -11,6 +11,8 @@ import type {
   SalineSweepOut,
   ScreeningRequest,
   SetSummary,
+  ValidationConfigRequest,
+  ValidationDetailOut,
 } from "./types";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -43,7 +45,13 @@ export async function getMaterials(): Promise<MaterialOut[]> {
 export async function uploadSet(
   files: File[] | FileList,
   role: "measurement" | "validation",
-  opts: { name: string; reference?: string; molarity?: number; temperature_c: number },
+  opts: {
+    name: string;
+    reference?: string;
+    molarity?: number;
+    salinity_psu?: number;
+    temperature_c: number;
+  },
 ): Promise<SetSummary> {
   const form = new FormData();
   Array.from(files).forEach((f) => form.append("files", f));
@@ -52,6 +60,7 @@ export async function uploadSet(
   form.append("temperature_c", String(opts.temperature_c));
   if (opts.reference) form.append("reference", opts.reference);
   if (opts.molarity != null) form.append("molarity", String(opts.molarity));
+  if (opts.salinity_psu != null) form.append("salinity_psu", String(opts.salinity_psu));
   return json(await fetch("/api/sets", { method: "POST", body: form }));
 }
 
@@ -90,6 +99,17 @@ export async function getRepeats(setId: string, frequenciesGhz: number[]): Promi
 
 export async function setScreening(setId: string, req: ScreeningRequest): Promise<RepeatsOut> {
   return postJson(`/api/sets/${setId}/screening`, req);
+}
+
+export async function getValidation(setId: string): Promise<ValidationDetailOut> {
+  return json(await fetch(`/api/sets/${setId}/validation`));
+}
+
+export async function setValidationConfig(
+  setId: string,
+  req: ValidationConfigRequest,
+): Promise<ValidationDetailOut> {
+  return postJson(`/api/sets/${setId}/validation`, req);
 }
 
 export async function fitCampaign(

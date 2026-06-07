@@ -83,6 +83,7 @@ export interface ValidationVerdict {
   sigma_measured: number;
   sigma_reference: number;
   notes: string[];
+  linked_batches: string[];
 }
 
 export interface ValidationOut {
@@ -257,6 +258,37 @@ export interface SalineSweepRow {
 export interface SalineSweepOut {
   set_id: string;
   rows: SalineSweepRow[];
+}
+
+// ---- editable, batch-linked validation ----
+
+export interface ValidationConfigRequest {
+  reference: string;
+  molarity?: number | null;
+  mass_percent?: number | null;
+  salinity_psu?: number | null;
+  temperature_c: number;
+  measurement_set_ids: string[];
+}
+
+export interface ValidationConfigOut {
+  reference: string;
+  molarity?: number | null;
+  mass_percent?: number | null;
+  salinity_psu?: number | null;
+  temperature_c: number;
+}
+
+export interface ValidationDetailOut {
+  set_id: string;
+  name: string;
+  reference_label: string;
+  confidence: string;
+  config: ValidationConfigOut;
+  verdict: ValidationVerdict;
+  overlay: RefOverlay;
+  saline_sweep?: SalineSweepRow[] | null;
+  linked_batches: string[];
 }
 
 // ---- batch comparison ----
