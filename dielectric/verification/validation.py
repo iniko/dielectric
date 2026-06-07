@@ -15,6 +15,7 @@ import numpy as np
 
 from ..io.campaign import Campaign, ValidationSet
 from ..reference.database import get
+from ..spectrum import Spectrum
 from ..units import BoolArray, FloatArray
 
 
@@ -55,21 +56,27 @@ def _low_freq_sigma(eff_sigma: FloatArray, n: int = 5) -> float:
     return float(np.median(eff_sigma[:k]))
 
 
-def validate_set(
-    vset: ValidationSet,
+def validate_mean(
+    mean: Spectrum,
     *,
+    set_id: str,
+    reference: str,
+    reference_kwargs: dict[str, float] | None = None,
     temperature_c: float,
     tol_eps: float = 0.10,
     tol_sigma: float = 0.35,
-    outlier_k: float | None = 3.5,
 ) -> ValidationVerdict:
-    """QC one validation set against its declared reference material."""
-    mean = vset.type_a(outlier_k=outlier_k).mean
-    kwargs: dict[str, float] = {**vset.reference_kwargs, "temperature_c": temperature_c}
+    """QC a Type A mean spectrum against a (possibly caller-overridden) reference material.
+
+    Unlike :func:`validate_set`, the reference and its parameters are passed in, so a stored
+    validation set can be re-validated against an edited standard without mutating the frozen set.
+    """
+    base_kwargs = reference_kwargs or {}
+    kwargs: dict[str, float] = {**base_kwargs, "temperature_c": temperature_c}
     try:
-        material = get(vset.reference, **kwargs)
+        material = get(reference, **kwargs)
     except (TypeError, ValueError):
-        material = get(vset.reference, **vset.reference_kwargs)
+        material = get(reference, **base_kwargs)
 
     f = mean.frequency_hz
     in_band: BoolArray = np.ones(f.size, dtype=bool)
@@ -102,7 +109,7 @@ def validate_set(
 
     passed = eps_real_rms <= tol_eps and sigma_rel <= tol_sigma
     return ValidationVerdict(
-        set_id=vset.sample_id,
+        set_id=set_id,
         reference=material.name,
         passed=passed,
         eps_real_rms=eps_real_rms,
@@ -114,6 +121,22 @@ def validate_set(
         tol_eps=tol_eps,
         tol_sigma=tol_sigma,
         notes=tuple(notes),
+    )
+
+
+def validate_set(
+    vset: ValidationSet,
+    *,
+    temperature_c: float,
+    tol_eps: float = 0.10,
+    tol_sigma: float = 0.35,
+    outlier_k: float | None = 3.5,
+) -> ValidationVerdict:
+    """QC one validation set against its declared reference material."""
+    return validate_mean(
+        vset.type_a(outlier_k=outlier_k).mean,
+        set_id=vset.sample_id, reference=vset.reference, reference_kwargs=vset.reference_kwargs,
+        temperature_c=temperature_c, tol_eps=tol_eps, tol_sigma=tol_sigma,
     )
 
 

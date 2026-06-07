@@ -107,6 +107,18 @@ def _load_spectrum(content: bytes) -> tuple[Spectrum, bool]:
     return spectrum, corrected
 
 
+def _unique_measurement_name(name: str) -> str:
+    """Disambiguate a batch name so two same-named batches never collapse in the fits cache
+    (which is keyed by sample_id) — that was the 'comparison needs two batches' bug."""
+    existing = {ms.sample_id for ms in STORE.measurement_sets.values()}
+    if name not in existing:
+        return name
+    i = 2
+    while f"{name} ({i})" in existing:
+        i += 1
+    return f"{name} ({i})"
+
+
 def make_measurement_set(
     files: list[tuple[str, bytes]], name: str, temperature_c: float
 ) -> tuple[str, bool]:
@@ -116,7 +128,10 @@ def make_measurement_set(
         s, c = _load_spectrum(content)
         spectra.append(s)
         corrected = corrected or c
-    ms = MeasurementSet(name, tuple(spectra), temperature_c, tuple(fn for fn, _ in files))
+    ms = MeasurementSet(
+        _unique_measurement_name(name), tuple(spectra), temperature_c,
+        tuple(fn for fn, _ in files),
+    )
     return STORE.add_measurement(ms), corrected
 
 

@@ -326,6 +326,21 @@ def test_comparison_report_renders_all_formats() -> None:
     assert "separates over" in html  # the verdict sentence
 
 
+def test_same_named_batches_stay_distinct_and_compare() -> None:
+    # Two batches uploaded with the SAME requested name must not collapse (the reported bug):
+    # the fits cache is keyed by name, so duplicates would otherwise drop to one → "needs two".
+    a = _upload("h02s19m*.csv", "measurement", limit=10, name="tissue")
+    b = _upload("h02v*.csv", "measurement", limit=10, name="tissue")
+    assert a["name"] == "tissue"
+    assert b["name"] == "tissue (2)"  # auto-disambiguated
+    cid = client.post("/api/campaigns", json={
+        "measurement_set_ids": [a["id"], b["id"]], "temperature_c": 25.0,
+    }).json()["id"]
+    body = client.post(f"/api/campaigns/{cid}/compare", json={}).json()
+    assert {bt["sample_id"] for bt in body["batches"]} == {"tissue", "tissue (2)"}
+    assert len(body["differences"]) == 1
+
+
 def test_compare_needs_two_sets() -> None:
     one = _upload("h02s19m*.csv", "measurement", limit=8, name="solo")
     cid = client.post("/api/campaigns", json={

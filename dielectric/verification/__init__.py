@@ -14,6 +14,7 @@ from .validation import (
     CampaignValidation,
     ValidationVerdict,
     validate_campaign,
+    validate_mean,
     validate_set,
 )
 
@@ -28,5 +29,6 @@ __all__ = [
     "kramers_kronig_check",
     "reference_overlay",
     "validate_campaign",
+    "validate_mean",
     "validate_set",
 ]
