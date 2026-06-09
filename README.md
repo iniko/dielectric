@@ -73,6 +73,51 @@ Then open http://localhost:5173, drop the bundled `data/h02s19m*.csv` into *Meas
 `data/h02v*.csv` into *Validation sets* (reference: saline), and click **Run analysis**. An E2E
 smoke test lives at `frontend/e2e/test_ui.py` (Playwright).
 
+## Desktop app (offline — no Python or Node required)
+
+The same UI ships as a self-contained desktop app for **macOS** and **Windows**. It bundles the
+React frontend, the FastAPI backend, and the `dielectric` library (with its reference data) into one
+installer — nothing else to install, and it runs **fully offline**. The app starts its own local
+backend on launch and shuts it down on quit.
+
+**Download:** grab the latest installer from the
+[**Releases page**](https://github.com/iniko/dielectric/releases/latest):
+
+- macOS (Apple Silicon): `Dielectric Spectroscopy-<version>-arm64.dmg`
+- Windows (x64): `Dielectric Spectroscopy Setup <version>.exe`
+
+### Install on macOS
+
+1. Open the `.dmg` and drag **Dielectric Spectroscopy** into your **Applications** folder.
+2. The app is **not yet code-signed**, so the first launch needs a one-time bypass: right-click (or
+   Control-click) the app → **Open** → **Open** in the dialog. After that it opens normally.
+   - If macOS says the app "is damaged or can't be opened" (Gatekeeper quarantine on a downloaded
+     file), clear the flag once in Terminal:
+     ```bash
+     xattr -dr com.apple.quarantine "/Applications/Dielectric Spectroscopy.app"
+     ```
+3. Launch it — the window appears once the bundled backend is ready (a few seconds on first run
+   while it warms up).
+
+> The published build targets **Apple Silicon (arm64)**. On an Intel Mac, build from source
+> (`cd desktop && npm run dist:mac` on an Intel machine) — see `desktop/README.md`.
+
+### Install on Windows
+
+1. Run `Dielectric Spectroscopy Setup <version>.exe`.
+2. The app is **not yet code-signed**, so SmartScreen may warn "Windows protected your PC": click
+   **More info** → **Run anyway**.
+3. The installer lets you choose the install location; finish the wizard and launch from the Start
+   menu or desktop shortcut.
+
+### Using it
+
+It's the same two workflows as the web app. Drag the bundled `data/h02s19m*.csv` into *Measurement
+sets* and `data/h02v*.csv` into *Validation sets* (reference: saline), then step through Load → fit →
+verify → report. Reports (PDF/DOCX/HTML) export through a native save dialog.
+
+> Developers building the installers themselves (and the release CI) — see `desktop/README.md`.
+
 ## Library quickstart
 
 ```python
