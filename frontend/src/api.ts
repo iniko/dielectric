@@ -14,10 +14,11 @@ import type {
   ValidationConfigRequest,
   ValidationDetailOut,
 } from "./types";
+import { apiFetch, apiUrl } from "./runtime";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   return json(
-    await fetch(url, {
+    await apiFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -39,7 +40,7 @@ async function json<T>(resp: Response): Promise<T> {
 }
 
 export async function getMaterials(): Promise<MaterialOut[]> {
-  return json(await fetch("/api/materials"));
+  return json(await apiFetch("/api/materials"));
 }
 
 export async function uploadSet(
@@ -67,7 +68,7 @@ export async function uploadSet(
   if (opts.operator) form.append("operator", opts.operator);
   if (opts.instrument) form.append("instrument", opts.instrument);
   if (opts.measurement_date) form.append("measurement_date", opts.measurement_date);
-  return json(await fetch("/api/sets", { method: "POST", body: form }));
+  return json(await apiFetch("/api/sets", { method: "POST", body: form }));
 }
 
 export async function createCampaign(body: {
@@ -77,7 +78,7 @@ export async function createCampaign(body: {
   title?: string;
 }): Promise<{ id: string }> {
   return json(
-    await fetch("/api/campaigns", {
+    await apiFetch("/api/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -90,7 +91,7 @@ export async function analyze(
   body: { model?: string | null; n_poles?: number | null },
 ): Promise<CampaignAnalysis> {
   return json(
-    await fetch(`/api/campaigns/${campaignId}/analyze`, {
+    await apiFetch(`/api/campaigns/${campaignId}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -100,7 +101,7 @@ export async function analyze(
 
 export async function getRepeats(setId: string, frequenciesGhz: number[]): Promise<RepeatsOut> {
   const q = frequenciesGhz.length ? `?frequencies=${frequenciesGhz.join(",")}` : "";
-  return json(await fetch(`/api/sets/${setId}/repeats${q}`));
+  return json(await apiFetch(`/api/sets/${setId}/repeats${q}`));
 }
 
 export async function setScreening(setId: string, req: ScreeningRequest): Promise<RepeatsOut> {
@@ -108,7 +109,7 @@ export async function setScreening(setId: string, req: ScreeningRequest): Promis
 }
 
 export async function getValidation(setId: string): Promise<ValidationDetailOut> {
-  return json(await fetch(`/api/sets/${setId}/validation`));
+  return json(await apiFetch(`/api/sets/${setId}/validation`));
 }
 
 export async function setValidationConfig(
@@ -126,7 +127,7 @@ export async function fitCampaign(
 }
 
 export async function getKK(campaignId: string): Promise<KKDetailOut> {
-  return json(await fetch(`/api/campaigns/${campaignId}/kk`));
+  return json(await apiFetch(`/api/campaigns/${campaignId}/kk`));
 }
 
 export async function referenceMatch(
@@ -147,8 +148,17 @@ export async function compareCampaign(
   return postJson(`/api/campaigns/${campaignId}/compare`, { baseline: baseline ?? null });
 }
 
+// These become <a href> links, so they can't carry the token header — append it as a
+// query param (the backend auth middleware accepts ?token= as a fallback). apiUrl()
+// prefixes the live backend origin in desktop; both are no-ops on the web build.
+import { AUTH_TOKEN } from "./runtime";
+
+const tokenParam = (): string => (AUTH_TOKEN ? `&token=${encodeURIComponent(AUTH_TOKEN)}` : "");
+
 export function reportUrl(campaignId: string, sample: string, fmt: "pdf" | "docx" | "html"): string {
-  return `/api/campaigns/${campaignId}/report?sample=${encodeURIComponent(sample)}&fmt=${fmt}`;
+  return apiUrl(
+    `/api/campaigns/${campaignId}/report?sample=${encodeURIComponent(sample)}&fmt=${fmt}${tokenParam()}`,
+  );
 }
 
 export function compareReportUrl(
@@ -156,11 +166,13 @@ export function compareReportUrl(
   baseline: string,
   fmt: "pdf" | "docx" | "html",
 ): string {
-  return `/api/campaigns/${campaignId}/compare/report?baseline=${encodeURIComponent(baseline)}&fmt=${fmt}`;
+  return apiUrl(
+    `/api/campaigns/${campaignId}/compare/report?baseline=${encodeURIComponent(baseline)}&fmt=${fmt}${tokenParam()}`,
+  );
 }
 
 export function campaignReportUrl(campaignId: string, fmt: "pdf" | "docx" | "html"): string {
-  return `/api/campaigns/${campaignId}/campaign-report?fmt=${fmt}`;
+  return apiUrl(`/api/campaigns/${campaignId}/campaign-report?fmt=${fmt}${tokenParam()}`);
 }
 
 export async function computeBudget(body: {
@@ -171,7 +183,7 @@ export async function computeBudget(body: {
   coverage_level: number;
 }): Promise<BudgetResult> {
   return json(
-    await fetch("/api/budget", {
+    await apiFetch("/api/budget", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

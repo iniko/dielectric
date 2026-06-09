@@ -6,11 +6,12 @@ verify → report) and the Uncertainty Budget sandbox (pure GUM calculation, no 
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import dielectric
 
@@ -19,12 +20,44 @@ from .store import STORE
 
 app = FastAPI(title="dielectric API", version=dielectric.__version__)
 
+# Origins are env-driven so the same app serves the web dev proxy (:5173) and the
+# packaged Electron renderer (file:// → Origin "null", or a custom app:// scheme).
+# With no env set, behaviour is identical to before (web dev only).
+_origins = os.environ.get(
+    "DIELECTRIC_ALLOW_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[o.strip() for o in _origins if o.strip()],
+    allow_origin_regex=r"^(app://.*|null)$",  # packaged Electron renderer
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Per-launch shared secret. Electron generates it, passes it to this process via env
+# and to the renderer via preload; every /api call must echo it back. Unset (web dev)
+# → no check, so nothing changes for the existing workflow. /api/health stays open so
+# the desktop readiness probe works before the renderer has the token.
+_TOKEN = os.environ.get("DIELECTRIC_AUTH_TOKEN")
+
+
+@app.middleware("http")
+async def _auth(request: Request, call_next):  # type: ignore[no-untyped-def]
+    # Never gate CORS preflight: OPTIONS carries no custom headers, so it can't supply the
+    # token — let it fall through to CORSMiddleware, which answers the preflight.
+    if (
+        _TOKEN
+        and request.method != "OPTIONS"
+        and request.url.path.startswith("/api")
+        and request.url.path != "/api/health"
+    ):
+        # Header for fetch() calls; ?token= fallback for <a href> download links.
+        supplied = request.headers.get("x-dielectric-token") or request.query_params.get("token")
+        if supplied != _TOKEN:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 @app.get("/api/health")

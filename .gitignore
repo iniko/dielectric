@@ -23,3 +23,15 @@ reports_out/
 
 # generated analysis outputs
 out/
+
+# Electron desktop build artifacts
+desktop/node_modules/
+desktop/electron/dist/
+desktop/renderer/
+desktop/resources/
+desktop/release/
+resources/
+
+# ...but DO keep the electron-builder build resources (icons, entitlements)
+!desktop/build/
+!desktop/build/**

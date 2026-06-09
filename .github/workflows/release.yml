@@ -1,0 +1,74 @@
+name: Build desktop installers
+
+# Builds the Electron + FastAPI desktop app on each OS (PyInstaller and electron-builder
+# cannot cross-compile, so the backend must be frozen on the same OS/arch that ships it).
+# Triggers on a version tag (vX.Y.Z) or manually.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # so a tag build can attach installers to the GitHub Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon runner → arm64 .dmg (matches electron-builder.yml)
+            script: dist:mac
+          - os: windows-latest # x64 runner → NSIS .exe
+            script: dist:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend + PyInstaller
+        run: pip install -e ".[web,report,hdf5]" pyinstaller
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build installer
+        working-directory: desktop
+        env:
+          PYTHON: python # build-backend.mjs uses the runner's python (no .venv in CI)
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing is opt-in: set these repo secrets to sign/notarize.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_LINK_WIN: ${{ secrets.CSC_LINK_WIN }}
+        run: npm run ${{ matrix.script }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.exe
+          if-no-files-found: warn
+
+      - name: Attach to GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/release/*.dmg
+            desktop/release/*.exe

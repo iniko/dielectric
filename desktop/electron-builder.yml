@@ -1,0 +1,42 @@
+appId: com.dielectric.app
+productName: Dielectric Spectroscopy
+directories:
+  output: release
+  buildResources: build
+
+# Inside the asar: the Electron shell + the built renderer.
+files:
+  - electron/dist/**
+  - renderer/**
+
+# The PyInstaller backend is bundled UNPACKED next to the app (binaries must live on the
+# real filesystem to be spawnable). Staged into desktop/resources/ by `npm run stage:backend`.
+extraResources:
+  - from: resources/dielectric-server
+    to: server
+    filter: ["**/*"]
+
+mac:
+  # arch must match the PyInstaller backend, which freezes for the HOST arch only.
+  # To ship Intel + Apple Silicon, run the build on each arch (or in CI) and merge —
+  # a single host cannot produce a correct x64 backend from arm64 (or vice versa).
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.education
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

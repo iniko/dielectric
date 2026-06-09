@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Renderer may only talk to itself and the loopback backend. Plotly/Tailwind inject
+         inline styles, hence 'unsafe-inline' for style-src. connect-src covers any port the
+         desktop backend lands on, plus the :5173 dev proxy. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
     <title>dielectric · spectroscopy analysis</title>
   </head>
   <body>

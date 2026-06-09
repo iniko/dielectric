@@ -1,0 +1,28 @@
+{
+  "name": "dielectric-desktop",
+  "version": "0.1.0",
+  "description": "Electron desktop shell for the dielectric spectroscopy toolkit",
+  "author": "Niko Istuk",
+  "main": "electron/dist/main.js",
+  "scripts": {
+    "build:main": "tsc -p electron/tsconfig.json",
+    "dev:vite": "npm --prefix ../frontend run dev",
+    "dev:api": "cd .. && .venv/bin/python -m backend.run_server --port 8001",
+    "dev:electron": "wait-on http://localhost:5173 && npm run build:main && electron .",
+    "dev:all": "concurrently -k -n VITE,API,ELECTRON -c green,yellow,cyan \"npm:dev:vite\" \"npm:dev:api\" \"npm:dev:electron\"",
+    "build:renderer": "cross-env ELECTRON=1 npm --prefix ../frontend run build",
+    "stage:renderer": "node -e \"const fs=require('fs');fs.rmSync('renderer',{recursive:true,force:true});fs.cpSync('../frontend/dist','renderer',{recursive:true})\"",
+    "build:backend": "node scripts/build-backend.mjs",
+    "dist": "npm run build:main && npm run build:renderer && npm run stage:renderer && npm run build:backend && electron-builder",
+    "dist:mac": "npm run dist -- --mac",
+    "dist:win": "npm run dist -- --win"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "wait-on": "^8.0.1"
+  }
+}
