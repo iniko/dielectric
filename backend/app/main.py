@@ -46,19 +46,32 @@ async def upload_set(
     molarity: float = Form(0.154),
     temperature_c: float = Form(25.0),
     salinity_psu: float | None = Form(None),
+    operator: str | None = Form(None),
+    instrument: str | None = Form(None),
+    measurement_date: str | None = Form(None),
 ) -> schemas.SetSummary:
     if role not in ("measurement", "validation"):
         raise HTTPException(400, "role must be 'measurement' or 'validation'")
     payload = [(f.filename or "upload.csv", await f.read()) for f in files]
     if not payload:
         raise HTTPException(400, "no files uploaded")
+    # Optional, free-text provenance fields; absent → today's behaviour (back-compat).
+    meta = {
+        k: v
+        for k, v in (
+            ("operator", operator),
+            ("instrument", instrument),
+            ("measurement_date", measurement_date),
+        )
+        if v
+    }
     try:
         if role == "measurement":
-            sid, corrected = services.make_measurement_set(payload, name, temperature_c)
+            sid, corrected = services.make_measurement_set(payload, name, temperature_c, meta)
             obj: object = STORE.measurement_sets[sid]
         else:
             sid, corrected = services.make_validation_set(
-                payload, name, reference, molarity, temperature_c, salinity_psu
+                payload, name, reference, molarity, temperature_c, salinity_psu, meta
             )
             obj = STORE.validation_sets[sid]
     except Exception as exc:  # malformed upload

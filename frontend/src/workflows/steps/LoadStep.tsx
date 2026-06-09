@@ -12,9 +12,11 @@ export default function LoadStep() {
   return (
     <div>
       <StepIntro title="1 · Load batches">
-        Each <b>batch</b> is one sample's repeat CSVs (Agilent 85070 exports). Load a batch, then
-        optionally attach a validation set (repeats of a known reference liquid) to it — the validation
-        then belongs to that batch. Load two or more batches to compare them later.
+        Each <b>batch</b> is one sample's repeated measurements — the files from a single
+        instrument/probe setup. CSV (including Agilent/Keysight 85070), Touchstone (.s1p), and HDF5
+        are supported; the format is auto-detected. Load a batch, then optionally attach a validation
+        set (repeats of a known reference liquid) to it — the validation then belongs to that batch.
+        Load two or more batches to compare them later.
       </StepIntro>
 
       <Card title="New batch" hint="measurement repeats of one sample">
@@ -78,11 +80,11 @@ function Staging({
           ref={inputRef}
           type="file"
           multiple
-          accept=".csv"
+          accept=".csv,.txt,.s1p,.s2p,.snp,.h5,.hdf5"
           className="hidden"
           onChange={(e) => add(e.target.files)}
         />
-        Drop {role} CSVs or click to browse
+        Drop {role} files or click to browse
       </div>
       {staged.length > 0 && (
         <div className="mt-2 overflow-hidden rounded-lg border border-[var(--color-line)]">
@@ -123,25 +125,32 @@ function BatchLoader({
 }) {
   const [staged, setStaged] = useState<File[]>([]);
   const [name, setName] = useState("");
+  const [meta, setMeta] = useState({ operator: "", instrument: "", measurement_date: "" });
+  const [metaOpen, setMetaOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     if (staged.length === 0) {
-      setError("Stage at least one CSV first.");
+      setError("Stage at least one file first.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const auto = staged[0].name.replace(/\d*\.csv$/i, "") || "batch";
+      // Auto-name from the first file: strip the extension, then any trailing repeat number.
+      const auto = staged[0].name.replace(/\.[^./\\]+$/, "").replace(/\d+$/, "") || "batch";
       const summary = await api.uploadSet(staged, "measurement", {
         name: name || auto,
         temperature_c: temperature,
+        operator: meta.operator || undefined,
+        instrument: meta.instrument || undefined,
+        measurement_date: meta.measurement_date || undefined,
       });
       onLoaded(summary);
       setStaged([]);
       setName("");
+      setMeta({ operator: "", instrument: "", measurement_date: "" });
     } catch (e) {
       setError(`Load failed: ${(e as Error).message}`);
     } finally {
@@ -153,19 +162,79 @@ function BatchLoader({
     <div>
       <Staging role="measurement" staged={staged} setStaged={setStaged} />
       {staged.length > 0 && (
-        <div className="mt-3 flex items-center gap-2">
-          <div className="flex-1">
-            <Input value={name} placeholder="batch name" onChange={(e) => setName(e.target.value)} />
+        <>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex-1">
+              <Input value={name} placeholder="batch name" onChange={(e) => setName(e.target.value)} />
+            </div>
+            <Button onClick={load} disabled={busy}>
+              {busy ? "Loading…" : "Load batch"}
+            </Button>
           </div>
-          <Button onClick={load} disabled={busy}>
-            {busy ? "Loading…" : "Load batch"}
-          </Button>
-        </div>
+          <MetaDisclosure open={metaOpen} setOpen={setMetaOpen} meta={meta} setMeta={setMeta} />
+        </>
       )}
       {error && <div className="mt-2">{<ErrorMsg error={error} />}</div>}
     </div>
   );
 }
+
+type Meta = { operator: string; instrument: string; measurement_date: string };
+
+// A collapsed "measurement metadata (optional)" disclosure — operator / instrument / date — so the
+// default one-click load stays uncluttered while provenance can be recorded when known. Instrument
+// is auto-detected from the file header when absent.
+function MetaDisclosure({
+  open,
+  setOpen,
+  meta,
+  setMeta,
+}: {
+  open: boolean;
+  setOpen: (b: boolean) => void;
+  meta: Meta;
+  setMeta: (m: Meta) => void;
+}) {
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-2 text-xs text-slate-500 hover:text-slate-300"
+      >
+        + measurement metadata (optional)
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 grid grid-cols-3 gap-2">
+      <Field label="instrument">
+        <Input
+          placeholder="auto-detected"
+          value={meta.instrument}
+          onChange={(e) => setMeta({ ...meta, instrument: e.target.value })}
+        />
+      </Field>
+      <Field label="operator">
+        <Input value={meta.operator} onChange={(e) => setMeta({ ...meta, operator: e.target.value })} />
+      </Field>
+      <Field label="date">
+        <Input
+          placeholder="YYYY-MM-DD"
+          value={meta.measurement_date}
+          onChange={(e) => setMeta({ ...meta, measurement_date: e.target.value })}
+        />
+      </Field>
+    </div>
+  );
+}
+
+const FORMAT_LABEL: Record<string, string> = {
+  agilent_csv: "Agilent/Keysight 85070 CSV",
+  csv: "generic CSV",
+  touchstone: "Touchstone",
+  hdf5: "HDF5",
+};
 
 function SetMeta({ s }: { s: SetSummary }) {
   return (
@@ -173,6 +242,13 @@ function SetMeta({ s }: { s: SetSummary }) {
       ε′ {s.eps_real_range[0].toFixed(1)}→{s.eps_real_range[1].toFixed(1)} · σ{" "}
       {s.sigma_low_s_per_m.toFixed(2)} S/m · {s.band_ghz[0].toFixed(2)}–
       {s.band_ghz[1].toFixed(0)} GHz · {s.n_used}/{s.n_repeats} repeats
+      {s.detected_format && (
+        <span className="text-slate-500">
+          {" · "}
+          {FORMAT_LABEL[s.detected_format] ?? s.detected_format}
+        </span>
+      )}
+      {s.instrument && <span className="text-slate-500">{" · "}{s.instrument}</span>}
     </div>
   );
 }
@@ -252,7 +328,7 @@ function AttachValidation({ batch, temperature }: { batch: SetSummary; temperatu
 
   async function attach() {
     if (staged.length === 0) {
-      setError("Stage validation CSVs first.");
+      setError("Stage validation files first.");
       return;
     }
     setBusy(true);

@@ -49,6 +49,23 @@ def test_upload_set_reports_sign_correction_and_quality() -> None:
     assert any("convention" in n for n in summary["notes"])  # positive loss was corrected
 
 
+def test_upload_detects_format_and_lifts_instrument() -> None:
+    # Provenance the loader used to discard is now surfaced on the summary.
+    summary = _upload("h02s19m*.csv", "measurement")
+    assert summary["detected_format"] == "agilent_csv"
+    assert "E8362B" in (summary["instrument"] or "")
+
+
+def test_upload_accepts_optional_operator_and_instrument_override() -> None:
+    # Optional provenance fields round-trip; an explicit instrument overrides the detected one.
+    summary = _upload(
+        "h02s19m*.csv", "measurement",
+        operator="N. Istuk", instrument="Custom rig X", measurement_date="2026-06-09",
+    )
+    assert summary["instrument"] == "Custom rig X"
+    assert summary["detected_format"] == "agilent_csv"
+
+
 def test_full_analysis_flow() -> None:
     meas = _upload("h02s19m*.csv", "measurement", limit=12)  # enough repeats for a stable selection
     val = _upload("h02v*.csv", "validation", limit=12, reference="saline", molarity="0.154")

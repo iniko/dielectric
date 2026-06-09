@@ -9,7 +9,9 @@ import math
 import os
 import tempfile
 import warnings
+from dataclasses import replace
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -25,13 +27,13 @@ from dielectric.convention import ConventionWarning
 from dielectric.fitting import select_model
 from dielectric.fitting.result import FitResult
 from dielectric.fitting.selection import ModelSelectionResult
+from dielectric.io import load_any
 from dielectric.io.campaign import (
     Campaign,
     CampaignMetadata,
     MeasurementSet,
     ValidationSet,
 )
-from dielectric.io.csv_loader import load_agilent_85070
 from dielectric.reference.database import get, query
 from dielectric.reference.liquids import (
     mass_percent_from_molarity,
@@ -103,19 +105,43 @@ _SCREEN_METHOD = (
 _SCREEN_CITATION = "Hampel 1974; Rousseeuw & Croux 1993 (1.4826 MAD scaling)"
 
 
-def _load_spectrum(content: bytes) -> tuple[Spectrum, bool]:
-    """Parse an uploaded 85070 CSV; return (spectrum, sign_was_corrected)."""
-    with tempfile.NamedTemporaryFile("wb", suffix=".csv", delete=False) as tf:
+def _load_spectrum(content: bytes, filename: str = "upload.csv") -> tuple[Spectrum, bool]:
+    """Parse an uploaded spectrum (format auto-detected from extension + content); return
+    (spectrum, sign_was_corrected). The original extension is preserved on the temp file so the
+    dispatcher can tell Touchstone/HDF5/CSV apart — an Agilent CSV still loads exactly as before."""
+    suffix = Path(filename).suffix or ".csv"
+    with tempfile.NamedTemporaryFile("wb", suffix=suffix, delete=False) as tf:
         tf.write(content)
         path = tf.name
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            spectrum = load_agilent_85070(path)
+            spectrum = load_any(path)
         corrected = any(issubclass(w.category, ConventionWarning) for w in caught)
     finally:
         os.unlink(path)
     return spectrum, corrected
+
+
+def _instrument_label(extra: dict[str, str]) -> str | None:
+    """A human-readable instrument string for the set summary: the operator-supplied value if any,
+    else the vendor+model lifted from the file header by :func:`dielectric.io.load_any`."""
+    if extra.get("instrument"):
+        return extra["instrument"]
+    label = " ".join(
+        p for p in (extra.get("instrument_vendor", ""), extra.get("instrument_model", "")) if p
+    )
+    return label or None
+
+
+def _apply_meta(spectra: list[Spectrum], meta: dict[str, str] | None) -> list[Spectrum]:
+    """Merge operator-supplied metadata (operator/instrument/date) into each spectrum's extra."""
+    if not meta:
+        return spectra
+    return [
+        replace(s, metadata=replace(s.metadata, extra={**s.metadata.extra, **meta}))
+        for s in spectra
+    ]
 
 
 def _unique_measurement_name(name: str) -> str:
@@ -131,14 +157,16 @@ def _unique_measurement_name(name: str) -> str:
 
 
 def make_measurement_set(
-    files: list[tuple[str, bytes]], name: str, temperature_c: float
+    files: list[tuple[str, bytes]], name: str, temperature_c: float,
+    meta: dict[str, str] | None = None,
 ) -> tuple[str, bool]:
     spectra = []
     corrected = False
-    for _fn, content in files:
-        s, c = _load_spectrum(content)
+    for fn, content in files:
+        s, c = _load_spectrum(content, fn)
         spectra.append(s)
         corrected = corrected or c
+    spectra = _apply_meta(spectra, meta)
     ms = MeasurementSet(
         _unique_measurement_name(name), tuple(spectra), temperature_c,
         tuple(fn for fn, _ in files),
@@ -149,13 +177,15 @@ def make_measurement_set(
 def make_validation_set(
     files: list[tuple[str, bytes]], name: str, reference: str, molarity: float,
     temperature_c: float, salinity_psu: float | None = None,
+    meta: dict[str, str] | None = None,
 ) -> tuple[str, bool]:
     spectra = []
     corrected = False
-    for _fn, content in files:
-        s, c = _load_spectrum(content)
+    for fn, content in files:
+        s, c = _load_spectrum(content, fn)
         spectra.append(s)
         corrected = corrected or c
+    spectra = _apply_meta(spectra, meta)
     kwargs = {"molarity": molarity} if reference == "saline" else {}
     vs = ValidationSet(name, tuple(spectra), reference, kwargs, temperature_c,
                        tuple(fn for fn, _ in files))
@@ -179,6 +209,7 @@ def set_summary(
                      "convention (Im(ε*) < 0).")
     reference = getattr(obj, "reference", None)
     molarity = obj.reference_kwargs.get("molarity") if isinstance(obj, ValidationSet) else None
+    extra = obj.spectra[0].metadata.extra if obj.spectra else {}
     return schemas.SetSummary(
         id=set_id,
         role=role,
@@ -196,6 +227,8 @@ def set_summary(
         reference=reference,
         molarity=molarity,
         notes=notes,
+        instrument=_instrument_label(extra),
+        detected_format=extra.get("detected_format"),
     )
 
 
@@ -204,7 +237,10 @@ def build_campaign(req: schemas.CampaignCreate) -> str:
     validations = tuple(STORE.validation_sets[i] for i in req.validation_set_ids)
     campaign = Campaign(
         measurements=measurements, validations=validations,
-        metadata=CampaignMetadata(title=req.title, temperature_c=req.temperature_c),
+        metadata=CampaignMetadata(
+            title=req.title, temperature_c=req.temperature_c,
+            operator=req.operator, date=req.date,
+        ),
     )
     return STORE.add_campaign(campaign)
 

@@ -51,6 +51,9 @@ export async function uploadSet(
     molarity?: number;
     salinity_psu?: number;
     temperature_c: number;
+    operator?: string;
+    instrument?: string;
+    measurement_date?: string;
   },
 ): Promise<SetSummary> {
   const form = new FormData();
@@ -61,6 +64,9 @@ export async function uploadSet(
   if (opts.reference) form.append("reference", opts.reference);
   if (opts.molarity != null) form.append("molarity", String(opts.molarity));
   if (opts.salinity_psu != null) form.append("salinity_psu", String(opts.salinity_psu));
+  if (opts.operator) form.append("operator", opts.operator);
+  if (opts.instrument) form.append("instrument", opts.instrument);
+  if (opts.measurement_date) form.append("measurement_date", opts.measurement_date);
   return json(await fetch("/api/sets", { method: "POST", body: form }));
 }
 

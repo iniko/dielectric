@@ -13,7 +13,7 @@ const DEFAULTS: BudgetComponentIn[] = [
   { name: "model-fit uncertainty", standard_uncertainty: 0.8, sensitivity: 1, dof: Infinity, kind: "B" },
   { name: "probe calibration", standard_uncertainty: 1.16, sensitivity: 1, dof: Infinity, kind: "B" },
   { name: "temperature", standard_uncertainty: 0.42, sensitivity: 1, dof: Infinity, kind: "B" },
-  { name: "input/inversion (probe software)", standard_uncertainty: 1.74, sensitivity: 1, dof: Infinity, kind: "B" },
+  { name: "data inversion (instrument/probe software)", standard_uncertainty: 1.74, sensitivity: 1, dof: Infinity, kind: "B" },
 ];
 
 export default function BudgetWorkflow() {

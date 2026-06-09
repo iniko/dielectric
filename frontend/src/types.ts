@@ -15,6 +15,8 @@ export interface SetSummary {
   reference?: string | null;
   molarity?: number | null;
   notes: string[];
+  instrument?: string | null;
+  detected_format?: string | null;
 }
 
 export interface ParamOut {

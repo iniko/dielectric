@@ -24,6 +24,9 @@ class SetSummary(BaseModel):
     reference: str | None = None
     molarity: float | None = None
     notes: list[str] = Field(default_factory=list)
+    # instrument: operator-supplied, else vendor+model lifted from the file header
+    instrument: str | None = None
+    detected_format: str | None = None  # "agilent_csv" | "csv" | "touchstone" | "hdf5"
 
 
 class CampaignCreate(BaseModel):
@@ -31,6 +34,8 @@ class CampaignCreate(BaseModel):
     validation_set_ids: list[str] = Field(default_factory=list)
     temperature_c: float = 25.0
     title: str = ""
+    operator: str = ""
+    date: str = ""
 
 
 class CampaignSummary(BaseModel):
