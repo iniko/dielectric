@@ -36,5 +36,8 @@ execFileSync(
 const src = path.join(root, "resources", "dielectric-server");
 const dst = path.join(desktop, "resources", "dielectric-server");
 rmSync(path.join(desktop, "resources"), { recursive: true, force: true });
-cpSync(src, dst, { recursive: true });
+// verbatimSymlinks keeps PyInstaller's RELATIVE symlinks (_internal/Python →
+// Python.framework/...) relative. The default rewrites them to absolute paths on the
+// build machine, which ships dead links and the backend dies on dlopen at first launch.
+cpSync(src, dst, { recursive: true, verbatimSymlinks: true });
 console.log(`[build-backend] staged → ${dst}`);

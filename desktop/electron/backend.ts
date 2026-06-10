@@ -46,9 +46,22 @@ function serverCommand(port: number): { cmd: string; args: string[]; cwd: string
   };
 }
 
-async function waitForHealth(url: string, token: string, timeoutMs = 30_000): Promise<void> {
+// First launch can take a while (PyInstaller onedir warm-up + Matplotlib building its font
+// cache, ~20s even on a fast machine), so the deadline is generous.
+async function waitForHealth(
+  url: string,
+  token: string,
+  exited: Promise<string>,
+  recentOutput: () => string,
+  timeoutMs = 120_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  let dead: string | null = null;
+  void exited.then((why) => (dead = why));
   while (Date.now() < deadline) {
+    if (dead !== null) {
+      throw new Error(`Backend process ${dead} before becoming healthy.\n\n${recentOutput()}`);
+    }
     try {
       const res = await fetch(`${url}/api/health`, {
         headers: { "x-dielectric-token": token },
@@ -59,7 +72,9 @@ async function waitForHealth(url: string, token: string, timeoutMs = 30_000): Pr
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`Backend did not become healthy within ${timeoutMs}ms`);
+  throw new Error(
+    `Backend did not become healthy within ${timeoutMs}ms.\n\n${recentOutput()}`,
+  );
 }
 
 export async function startBackend(): Promise<Backend> {
@@ -80,11 +95,32 @@ export async function startBackend(): Promise<Backend> {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  child.stdout?.on("data", (d) => console.log(`[backend] ${String(d).trimEnd()}`));
-  child.stderr?.on("data", (d) => console.error(`[backend] ${String(d).trimEnd()}`));
-  child.on("exit", (code) => console.log(`[backend] exited with code ${code}`));
+  // Keep the tail of the server's output so a startup failure can show WHY (the packaged
+  // app has no console — without this, every failure is an opaque timeout).
+  const tail: string[] = [];
+  const capture = (d: unknown): void => {
+    tail.push(...String(d).trimEnd().split("\n"));
+    if (tail.length > 40) tail.splice(0, tail.length - 40);
+  };
+  child.stdout?.on("data", (d) => {
+    capture(d);
+    console.log(`[backend] ${String(d).trimEnd()}`);
+  });
+  child.stderr?.on("data", (d) => {
+    capture(d);
+    console.error(`[backend] ${String(d).trimEnd()}`);
+  });
+  const exited = new Promise<string>((resolve) => {
+    child.on("error", (err) => resolve(`failed to spawn (${err.message})`));
+    child.on("exit", (code, signal) => {
+      console.log(`[backend] exited with code ${code}`);
+      resolve(signal ? `was killed by ${signal}` : `exited with code ${code}`);
+    });
+  });
 
-  await waitForHealth(url, token);
+  await waitForHealth(url, token, exited, () =>
+    tail.length ? `Last server output:\n${tail.join("\n")}` : "(no server output captured)",
+  );
 
   const stop = (): Promise<void> =>
     new Promise<void>((resolve) => {
