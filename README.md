@@ -83,8 +83,12 @@ backend on launch and shuts it down on quit.
 **Download:** grab the latest installer from the
 [**Releases page**](https://github.com/iniko/dielectric/releases/latest):
 
-- macOS (Apple Silicon): `Dielectric Spectroscopy-<version>-arm64.dmg`
+- macOS — Apple Silicon (M-series): `Dielectric Spectroscopy-<version>-arm64.dmg`
+- macOS — Intel: `Dielectric Spectroscopy-<version>-x64.dmg`
 - Windows (x64): `Dielectric Spectroscopy Setup <version>.exe`
+
+> Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" → arm64;
+> "Processor: Intel…" → x64.
 
 ### Install on macOS
 
@@ -99,8 +103,6 @@ backend on launch and shuts it down on quit.
 3. Launch it — the window appears once the bundled backend is ready (a few seconds on first run
    while it warms up).
 
-> The published build targets **Apple Silicon (arm64)**. On an Intel Mac, build from source
-> (`cd desktop && npm run dist:mac` on an Intel machine) — see `desktop/README.md`.
 
 ### Install on Windows
 

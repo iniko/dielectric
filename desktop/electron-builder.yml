@@ -17,12 +17,17 @@ extraResources:
     filter: ["**/*"]
 
 mac:
-  # arch must match the PyInstaller backend, which freezes for the HOST arch only.
-  # To ship Intel + Apple Silicon, run the build on each arch (or in CI) and merge —
+  # arch must match the PyInstaller backend, which freezes for the HOST arch only —
   # a single host cannot produce a correct x64 backend from arm64 (or vice versa).
+  # arm64 here is the default for `dist:mac`; the Intel dmg comes from `dist:mac:x64`
+  # (`electron-builder --mac dmg --x64`) on the macos-15-intel CI runner — NAMING the
+  # target on the CLI is what makes electron-builder ignore this target/arch list
+  # (a bare --x64 would not override it).
   target:
     - target: dmg
       arch: [arm64]
+  # Explicit so BOTH dmgs carry the arch suffix (the default omits it for x64).
+  artifactName: "${productName}-${version}-${arch}.${ext}"
   category: public.app-category.education
   icon: build/icon.icns
   hardenedRuntime: true

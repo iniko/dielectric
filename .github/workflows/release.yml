@@ -20,6 +20,8 @@ jobs:
         include:
           - os: macos-14 # Apple Silicon runner → arm64 .dmg (matches electron-builder.yml)
             script: dist:mac
+          - os: macos-15-intel # last x86_64 GitHub runner (supported until Aug 2027) → x64 .dmg
+            script: dist:mac:x64
           - os: windows-latest # x64 runner → NSIS .exe
             script: dist:win
     runs-on: ${{ matrix.os }}
