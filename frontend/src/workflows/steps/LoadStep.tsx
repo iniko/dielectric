@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../../api";
 import type { SetSummary } from "../../types";
 import { Badge, Button, Card, Field, Input } from "../../components/ui";
@@ -9,6 +9,14 @@ const REFERENCES = ["saline", "water", "seawater", "methanol", "ethanol"];
 
 export default function LoadStep() {
   const { measurements, temperature, setTemperature, addSet } = useAnalysis();
+  // Scroll the just-loaded batch card into view (it lands directly above the loader).
+  const lastCardRef = useRef<HTMLDivElement>(null);
+  const prevCount = useRef(measurements.length);
+  useEffect(() => {
+    if (measurements.length > prevCount.current)
+      lastCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    prevCount.current = measurements.length;
+  }, [measurements.length]);
   return (
     <div>
       <StepIntro title="1 · Load batches">
@@ -19,17 +27,15 @@ export default function LoadStep() {
         Load two or more batches to compare them later.
       </StepIntro>
 
-      <Card title="New batch" hint="measurement repeats of one sample">
-        <BatchLoader temperature={temperature} onLoaded={addSet} />
-      </Card>
-
       <div className="mt-6 space-y-4">
-        {measurements.map((b) => (
-          <BatchCard key={b.id} batch={b} temperature={temperature} />
+        {measurements.map((b, i) => (
+          <div key={b.id} ref={i === measurements.length - 1 ? lastCardRef : undefined}>
+            <BatchCard batch={b} index={i} temperature={temperature} />
+          </div>
         ))}
-        {measurements.length === 0 && (
-          <p className="text-xs text-slate-600">No batch loaded yet.</p>
-        )}
+        <Card title="New batch" hint="measurement repeats of one sample">
+          <BatchLoader temperature={temperature} onLoaded={addSet} />
+        </Card>
       </div>
 
       <div className="mt-6 max-w-xs">
@@ -253,11 +259,19 @@ function SetMeta({ s }: { s: SetSummary }) {
   );
 }
 
-function BatchCard({ batch, temperature }: { batch: SetSummary; temperature: number }) {
+function BatchCard({
+  batch,
+  index,
+  temperature,
+}: {
+  batch: SetSummary;
+  index: number;
+  temperature: number;
+}) {
   const { removeSet, validations, validationLinks, detachValidation } = useAnalysis();
   const attached = validations.filter((v) => validationLinks[v.id] === batch.id);
   return (
-    <Card title={`Batch: ${batch.name}`} hint={`${batch.n_used}/${batch.n_repeats} repeats`}>
+    <Card title={`Batch ${index + 1} · ${batch.name}`} hint={`${batch.n_used}/${batch.n_repeats} repeats`}>
       <div className="flex items-start justify-between">
         <SetMeta s={batch} />
         <button

@@ -62,11 +62,13 @@ with sync_playwright() as p:
     page.get_by_role("button", name="Load batch").click()
     page.wait_for_timeout(2000)
     obs.append(("two batch cards", page.locator("text=/\\d+\\/\\d+ repeats/").count() >= 2))
+    obs.append(("batch cards numbered", page.locator("text=/Batch 2 ·/").count() >= 1))
 
     # attach a validation set to batch A
     page.get_by_role("button", name="Attach validation (optional)").first.click()
     page.wait_for_timeout(400)
-    page.locator('input[type="file"]').last.set_input_files(val)
+    # the open attach panel (batch A's card) precedes the loader card in DOM order
+    page.locator('input[type="file"]').first.set_input_files(val)
     page.wait_for_timeout(400)
     page.get_by_role("button", name="Attach validation", exact=True).click()
     page.wait_for_selector("text=Attached validation", timeout=15000)
