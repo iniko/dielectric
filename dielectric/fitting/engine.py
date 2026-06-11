@@ -185,6 +185,24 @@ def fit(
     ss_res = float(np.sum(stacked_resid**2))
     r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
+    # Per-component diagnostics. The honest split is the mean squared pull per component (residual
+    # weighted by the per-point σ; equals mean squared raw residual when unweighted) — it says, per
+    # component, whether the fit lands within the Type A uncertainty. The per-component R² (variance
+    # explained against each component's own mean) is a secondary view and may be negative.
+    re_resid, im_resid = np.real(resid_complex), np.imag(resid_complex)
+    re_data, im_data = np.real(eps_data), np.imag(eps_data)
+    msp_real = (float(np.mean((re_resid / sigma_re) ** 2)) if use_weights
+                else float(np.mean(re_resid**2)))
+    msp_imag = (float(np.mean((im_resid / sigma_im) ** 2)) if use_weights
+                else float(np.mean(im_resid**2)))
+
+    def _r2(resid: FloatArray, data: FloatArray) -> float:
+        sst = float(np.sum((data - np.mean(data)) ** 2))
+        return 1.0 - float(np.sum(resid**2)) / sst if sst > 0 else float("nan")
+
+    r_squared_real = _r2(re_resid, re_data)
+    r_squared_imag = _r2(im_resid, im_data)
+
     log_params = tuple(n for n, lf in zip(names, log_flags, strict=True) if lf)
     # The per-point σ the fit weighted by (floored Type A SEM), packed as σ_re + jσ_im; None when
     # unweighted. Σ|resid/σ|² over the stacked real/imag residuals equals the reported χ².
@@ -203,6 +221,10 @@ def fit(
         weighted=use_weights,
         sigma_used=sigma_used,
         r_squared=r_squared,
+        msp_real=msp_real,
+        msp_imag=msp_imag,
+        r_squared_real=r_squared_real,
+        r_squared_imag=r_squared_imag,
         success=bool(best.success),
         message=str(best.message),
         log_scaled_params=log_params,

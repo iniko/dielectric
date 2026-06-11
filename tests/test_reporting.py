@@ -95,6 +95,20 @@ def test_methods_paragraph_mentions_key_elements() -> None:
     assert "dielectric toolkit" in text
 
 
+def test_methods_paragraph_includes_structure_and_rationale() -> None:
+    import warnings as _w
+
+    from dielectric.fitting import select_model
+
+    spectrum, _ = _fit()
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+        sel = select_model(spectrum)
+    text = methods_paragraph(sel.chosen.result, selection=sel, n_repeats=15)
+    assert "relaxation" in text  # the structure phrase (e.g. "a single … relaxation")
+    assert sel.rationale.split(":")[0] in text  # the rationale is carried into the report
+
+
 def test_methods_paragraph_override_phrased_as_despite() -> None:
     """An analyst override that ranks worse must read "chosen despite ΔAICc = X in favour of",
     never "preferred over ... by ΔAICc = -X" (which endorses a worse fit)."""

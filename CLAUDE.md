@@ -54,8 +54,10 @@ CI (`.github/workflows/ci.yml`) has 3 jobs: **library** (3.10–3.12: ruff + myp
 concrete classes. A model is an immutable frozen dataclass exposing `epsilon(f) -> complex`,
 `param_names`, `params`, and `provenance`. Reference materials are *pre-configured model instances*,
 so library materials compose with fitting/comparison/uncertainty exactly like a user-fitted model.
-`MultiPoleRelaxation` is the configurable "number of poles" model and overrides `param_names`/
-`params`/`with_params` to expose a **flat** parameter vector for the generic fitter.
+`MultiPoleRelaxation` is the configurable "number of poles" engine and overrides `param_names`/
+`params`/`with_params` to expose a **flat** parameter vector for the generic fitter; with
+`fixed_alpha=True` it is the **Debye ladder** (per-pole α pinned to 0 and dropped from the fitted
+vector), which is how "Debye (N poles) + DC σ" is realised on the same machinery.
 
 **`Spectrum` (`spectrum.py`) is the single value object every layer consumes.** By the time a
 `Spectrum` exists it is guaranteed to be in the internal convention — sign detection happens *only*
@@ -82,12 +84,21 @@ is the rigor failure, not the algorithm.
 weights by the Type A SEM, and runs a small multistart. It stores the per-point σ it weighted by on
 `FitResult.sigma_used`, so `FitResult.standardized_residuals` (raw ÷ σ) are dimensionless "pulls" with
 `Σ(pull²) == χ²` — the fit step plots these (with ±1σ/±2σ bands) by default, with a toggle to the raw
-dual-axis (Δε′ / Δε″|Δσ) view. `selection.select_model` ranks candidates by
-**AICc/BIC on N = 2·n_freq**, then recommends the most parsimonious model that (a) fits comparably
-well (R² within tol) and (b) is *identifiable* — it flags `degenerate` fits (a parameter with huge
-relative uncertainty, e.g. a slow pole absorbing the DC-conduction tail) and `overparam` fits, and
-never trades a good-but-underdetermined fit for a qualitatively worse one. `force_model=`/`n_poles=`
-override while still reporting where the choice ranks.
+dual-axis (Δε′ / Δε″|Δσ) view. The engine also stores **per-component** goodness on `FitResult`
+(`msp_real`/`msp_imag` = mean squared pull per ε′/ε″ — the honest "fits within Type A uncertainty"
+metric; `r_squared_real`/`imag` secondary, may be negative). **Models use a compositional label
+grammar** (`fitting/fitters.py`): `family [(N poles)] [+ DC σ]` — `compose_fitter`/`model_label`/
+`parse_model_label` are the single source of truth, and `fitting/catalog.py` `model_info(label)`
+derives the equation + plain-language description from it (no parallel hand-map). The default panel
+is **11 candidates**: the 5 classics (Debye, Cole-Cole, Cole-Davidson, Havriliak-Negami, Jonscher;
+single-pole, no DC) + the Debye and Cole-Cole ladders at 1–3 poles + DC σ. `selection.select_model`
+ranks by **AICc/BIC on N = 2·n_freq**, recommends the most parsimonious model that (a) fits comparably
+well (R² within tol) and (b) is *identifiable* (flags `degenerate`/`overparam`), records a
+machine-readable `RankedFit.excluded_reason` per candidate + a `ModelSelectionResult.rationale`
+sentence, and warns on χ²ᵣ ≫ 1 misfit and on poles peaking outside the measured band. `force_model=`
+(a family or full label), `n_poles=`, and `dc_sigma=` **compose** into one forced model (a conflict
+raises); given alone, `n_poles`/`dc_sigma` constrain the panel and auto-select (not an override).
+Old `MultiPole(N=k)` labels are rejected with a grammar-help error.
 
 **Backend** (`backend/app/`): `services.py` is the ONLY place that touches the library; `main.py`
 is HTTP plumbing; `store.py` is an in-memory dict. Schemas (`schemas.py`) mirror library outputs and
@@ -165,5 +176,9 @@ in sync when changing the API.
 - **mypy --strict + numpy**: model `epsilon()` returns are wrapped in `np.asarray(..., dtype=
   np.complex128)` because arithmetic widens to `complexfloating[Any]`. Use the `FloatArray`/
   `ComplexArray`/`BoolArray` aliases from `units.py`.
-- Few-repeat data is genuinely underdetermined — selection stays in the conductive family and flags
-  it; this is intended, not a bug (≥~8 repeats give the stable Cole-Cole + DC σ result).
+- Few-repeat data is genuinely underdetermined — the free-α Cole-Cole ladders go `degenerate` fast
+  (α aliases the conduction tail), so selection often lands on a **Debye-ladder** model (pinned α,
+  fewer params, identifiable) rather than Cole-Cole. This is intended, not a bug: with the 11-model
+  panel the recommendation is the most parsimonious *identifiable* fit, which on the bundled h02 data
+  is `Debye (3 poles) + DC σ` (the `rationale` explains why lower-AICc Cole-Cole candidates were
+  excluded).

@@ -8,20 +8,12 @@ Kramers-Kronig check, and the validation status, with every parameter reported a
 from __future__ import annotations
 
 from .. import __version__
+from ..fitting.catalog import model_info, structure_phrase
 from ..fitting.result import FitResult
 from ..fitting.selection import ModelSelectionResult
 from ..verification.kramers_kronig import KKResult
 from ..verification.validation import CampaignValidation
 from .formatting import format_measurement
-
-_MODEL_PHRASES = {
-    "Debye": "a Debye relaxation model",
-    "ColeCole": "a Cole-Cole model",
-    "ColeDavidson": "a Cole-Davidson model",
-    "HavriliakNegami": "a Havriliak-Negami model",
-    "JonscherUniversal": "a Jonscher universal-response model",
-    "MultiPoleRelaxation": "a multi-pole Cole-Cole model with a DC-conductivity term",
-}
 
 
 def methods_paragraph(
@@ -43,8 +35,12 @@ def methods_paragraph(
     """
     sentences: list[str] = []
 
-    model_name = type(fit.model).__name__
-    model_phrase = _MODEL_PHRASES.get(model_name, f"a {model_name} model")
+    # Describe the model from the chosen label when available (states family + pole count), else
+    # from the fitted instance.
+    if selection is not None:
+        model_phrase = "a model comprising " + model_info(selection.chosen.label).description
+    else:
+        model_phrase = "a model comprising " + structure_phrase(fit.model)
     citation = fit.model.provenance.short_citation()
 
     # 1. Data / averaging — disclose any repeat exclusion (the rigor-critical bit).
@@ -114,6 +110,8 @@ def methods_paragraph(
             else "chosen by the analyst (overriding the AICc recommendation)"
         )
         sentences.append(f"The model was {how} among {n_cand} candidate models{margin}.")
+        if not selection.overridden and selection.rationale:
+            sentences.append(selection.rationale)
 
     # 4. Kramers-Kronig.
     if kk is not None:

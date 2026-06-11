@@ -13,17 +13,18 @@ function paramUnit(name: string): string {
   return "";
 }
 
-const MODEL_OPTIONS = [
-  "",
-  "Debye",
-  "Cole-Cole",
-  "Cole-Davidson",
-  "Havriliak-Negami",
-  "Jonscher",
-  "Cole-Cole + DC σ",
-  "MultiPole(N=2) + DC σ",
-  "MultiPole(N=3) + DC σ",
+// Model family is chosen on its own; pole count and the DC-σ term compose with it. The dropdown
+// lists pure families (value = family name, "" = auto) annotated with their shape.
+const FAMILY_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "auto-select (recommended)" },
+  { value: "Debye", label: "Debye — unbroadened single relaxation" },
+  { value: "Cole-Cole", label: "Cole-Cole — symmetric broadening" },
+  { value: "Cole-Davidson", label: "Cole-Davidson — asymmetric broadening" },
+  { value: "Havriliak-Negami", label: "Havriliak-Negami — general broadening" },
+  { value: "Jonscher", label: "Jonscher — universal power law" },
 ];
+// Only these families support a pole ladder (N>1) and a composable DC-σ term ("" = auto).
+const LADDER = ["", "Debye", "Cole-Cole"];
 
 export default function FitStep() {
   const { fitReq, setFitReq, ensureFit, measurements, validations, temperature } = useAnalysis();
@@ -41,6 +42,14 @@ export default function FitStep() {
   if (debouncedKey === rawKey && polesValid) fetchKeyRef.current = rawKey;
   const { data, loading, error } = useAsync(() => ensureFit(), [fetchKeyRef.current]);
   const stale = loading || error !== null;
+  const isLadder = LADDER.includes(fitReq.model); // family supports poles + a composable DC term
+
+  // Choosing a non-ladder family clears poles/DC so a non-composable request is never sent.
+  function setFamily(model: string) {
+    setFitReq(
+      LADDER.includes(model) ? { ...fitReq, model } : { ...fitReq, model, poles: "", dcSigma: "" },
+    );
+  }
 
   const selectCls =
     "w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-ink-850)] px-3 py-2 text-sm text-slate-100";
@@ -59,12 +68,12 @@ export default function FitStep() {
           <Field label="model family">
             <select
               value={fitReq.model}
-              onChange={(e) => setFitReq({ ...fitReq, model: e.target.value })}
+              onChange={(e) => setFamily(e.target.value)}
               className={selectCls}
             >
-              {MODEL_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {m || "auto-select (recommended)"}
+              {FAMILY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>
@@ -74,9 +83,11 @@ export default function FitStep() {
               type="number"
               min={1}
               max={3}
-              placeholder="auto"
+              placeholder="1 (auto ladders)"
               value={fitReq.poles}
+              disabled={!isLadder}
               onChange={(e) => setFitReq({ ...fitReq, poles: e.target.value })}
+              className="disabled:opacity-40"
             />
             {!polesValid && (
               <p className="mt-1 text-xs text-amber-300">1–3, blank = auto — fit not updated.</p>
@@ -88,26 +99,23 @@ export default function FitStep() {
               onChange={(e) =>
                 setFitReq({ ...fitReq, dcSigma: e.target.value as "" | "on" | "off" })
               }
-              disabled={fitReq.model !== ""}
+              disabled={!isLadder}
               className={`${selectCls} disabled:opacity-40`}
             >
               <option value="">auto (no constraint)</option>
               <option value="on">include DC σ</option>
               <option value="off">exclude DC σ</option>
             </select>
-            {fitReq.model !== "" && (
-              <p className="mt-1 text-xs text-slate-500">
-                disabled — the forced family decides its own DC-σ term
-              </p>
-            )}
           </Field>
         </div>
         <Note>
-          These settings apply to <b>all loaded batches</b>. The DC-σ choice constrains
-          auto-selection to model families with (or without) a DC-conductivity term; it is disabled
-          when an explicit family is forced. Add poles only when a one-pole fit leaves visible
-          residual structure — most saline/tissue spectra at 0.2–20 GHz need a single
-          (water-relaxation) pole.
+          These settings apply to <b>all loaded batches</b> and <b>compose</b>: a family, a pole
+          count, and the DC-σ term combine into one model (e.g. <i>Cole-Cole (2 poles) + DC σ</i>).
+          Poles and the DC-σ term apply only to the Debye and Cole-Cole families (the others are
+          single-pole shapes without a conductivity term). With the family on <i>auto</i>, a pole
+          count ladders both Debye and Cole-Cole at that count, and the DC-σ choice constrains the
+          candidate panel. Most saline/tissue spectra at 0.2–20 GHz need a single
+          (water-relaxation) pole plus conductivity.
         </Note>
       </Card>
 
@@ -139,9 +147,16 @@ function FitPanel({ r }: { r: FitResultOut }) {
       title={`Sample: ${r.sample_id}`}
       hint={r.overridden ? "model overridden" : "auto-selected"}
     >
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <Badge tone="signal">{r.chosen_model}</Badge>
+        {r.structure && <span className="text-xs text-slate-400">{r.structure}</span>}
       </div>
+      {r.equation && (
+        <p className="tabular mb-2 text-xs text-slate-500">{r.equation}</p>
+      )}
+      {!r.overridden && r.rationale && (
+        <p className="mb-4 text-xs leading-relaxed text-slate-400">{r.rationale}</p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div>
@@ -201,6 +216,15 @@ function FitPanel({ r }: { r: FitResultOut }) {
         <Stat label="AICc" value={r.aicc.toPrecision(4)} />
         <Stat label="params" value={String(r.params.length)} />
       </div>
+      <p className="mt-2 text-xs leading-relaxed text-slate-500">
+        R² is computed on the stacked real + imaginary residuals (per-component ε′ / ε″:{" "}
+        {r.r_squared_real.toFixed(3)} / {r.r_squared_imag.toFixed(3)}; component R² can be negative).
+        It measures variance explained against the large structural variation in the data (dispersion
+        amplitude in ε′, conduction tail in ε″), so values near 1 do <b>not</b> imply agreement
+        within the measurement uncertainty — judge adequacy from the standardized residuals and the
+        per-component mean squared pull (ε′ / ε″: {r.msp_real.toFixed(2)} / {r.msp_imag.toFixed(2)};
+        ≈ 1 means a fit within Type A uncertainty).
+      </p>
 
       <div className="mt-4">
         <PanelLabel>Fitted parameters (value ± standard uncertainty, k = 1)</PanelLabel>
@@ -242,6 +266,7 @@ function FitPanel({ r }: { r: FitResultOut }) {
               {r.ranking.map((rf) => (
                 <tr
                   key={rf.label}
+                  title={rf.excluded_reason || undefined}
                   className={`border-t border-[var(--color-line)] ${rf.chosen ? "bg-teal-500/5" : ""}`}
                 >
                   <td className="px-3 py-1.5 text-slate-200">

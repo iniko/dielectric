@@ -37,6 +37,7 @@ export interface RankedOut {
   flag: "" | "overparam" | "degenerate";
   chosen: boolean;
   recommended: boolean; // the parsimony-aware automatic pick (≠ chosen after an override)
+  excluded_reason: string; // why it is not the recommendation ("" = it is the recommendation)
 }
 
 export interface KKOut {
@@ -66,10 +67,17 @@ export interface AnalysisResult {
   sample_id: string;
   chosen_model: string;
   overridden: boolean;
+  structure: string;
+  equation: string;
+  rationale: string;
   params: ParamOut[];
   r_squared: number;
   chi2_reduced: number;
   aicc: number;
+  msp_real: number;
+  msp_imag: number;
+  r_squared_real: number;
+  r_squared_imag: number;
   ranking: RankedOut[];
   selection_warnings: string[];
   kk: KKOut;
@@ -193,10 +201,17 @@ export interface FitResultOut {
   sample_id: string;
   chosen_model: string;
   overridden: boolean;
+  structure: string;
+  equation: string;
+  rationale: string;
   params: ParamOut[];
   r_squared: number;
   chi2_reduced: number;
   aicc: number;
+  msp_real: number;
+  msp_imag: number;
+  r_squared_real: number;
+  r_squared_imag: number;
   ranking: RankedOut[];
   selection_warnings: string[];
   plot: SpectrumPlot;

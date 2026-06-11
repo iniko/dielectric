@@ -52,8 +52,13 @@ def _build_parser() -> argparse.ArgumentParser:
     a.add_argument("--reference", action="append", default=[], metavar="NAME",
                    help="reference material per --validate (e.g. saline)")
     a.add_argument("--molarity", type=float, default=0.154, help="saline molarity [mol/L]")
-    a.add_argument("--model", default=None, help="force a model label (overrides auto-selection)")
-    a.add_argument("--poles", type=int, default=None, help="force the number of Cole-Cole poles")
+    a.add_argument("--model", default=None,
+                   help="force a model family or full label, e.g. 'Debye' or "
+                        "'Cole-Cole (2 poles) + DC σ' (composes with --poles/--dc-sigma)")
+    a.add_argument("--poles", type=int, default=None,
+                   help="pole count (1-3); composes with --model, or ladders the auto panel")
+    a.add_argument("--dc-sigma", choices=("on", "off"), default=None, dest="dc_sigma",
+                   help="include/exclude a DC-conductivity term (composes with --model)")
     a.add_argument("--temperature", type=float, default=25.0, help="measurement temperature [°C]")
     a.add_argument("--out", default="out", help="output directory")
     a.add_argument("--no-report", action="store_true", help="skip docx/pdf report generation")
@@ -83,7 +88,8 @@ def _analyze(args: argparse.Namespace) -> int:
         spectrum = ta.mean
         quality = spectrum.quality_report()
 
-        sel = select_model(spectrum, force_model=args.model, n_poles=args.poles)
+        dc = {"on": True, "off": False, None: None}[args.dc_sigma]
+        sel = select_model(spectrum, force_model=args.model, n_poles=args.poles, dc_sigma=dc)
         fit = sel.chosen.result
         kk = kramers_kronig_check(spectrum, model=fit.model)
         cv = validate_campaign(campaign) if validations else None

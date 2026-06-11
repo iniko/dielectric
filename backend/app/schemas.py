@@ -71,6 +71,7 @@ class RankedOut(BaseModel):
     flag: str  # "", "overparam", "degenerate"
     chosen: bool
     recommended: bool = False  # the parsimony-aware automatic pick (≠ chosen after an override)
+    excluded_reason: str = ""  # why it is not the recommendation ("" = it is the recommendation)
 
 
 class KKOut(BaseModel):
@@ -117,10 +118,17 @@ class AnalysisResult(BaseModel):
     sample_id: str
     chosen_model: str
     overridden: bool
+    structure: str = ""  # plain-language model structure (family + pole count)
+    equation: str = ""  # unicode model equation
+    rationale: str = ""  # why the recommendation was chosen
     params: list[ParamOut]
     r_squared: float
     chi2_reduced: float
     aicc: float
+    msp_real: float = float("nan")  # mean squared pull, ε' component
+    msp_imag: float = float("nan")  # mean squared pull, ε'' component
+    r_squared_real: float = float("nan")  # per-component R² (may be negative)
+    r_squared_imag: float = float("nan")
     ranking: list[RankedOut]
     selection_warnings: list[str]
     kk: KKOut
@@ -238,10 +246,17 @@ class FitResultOut(BaseModel):
     sample_id: str
     chosen_model: str
     overridden: bool
+    structure: str = ""  # plain-language model structure
+    equation: str = ""  # unicode model equation
+    rationale: str = ""  # why the recommendation was chosen
     params: list[ParamOut]
     r_squared: float
     chi2_reduced: float
     aicc: float
+    msp_real: float = float("nan")  # mean squared pull, ε' component
+    msp_imag: float = float("nan")  # mean squared pull, ε'' component
+    r_squared_real: float = float("nan")  # per-component R² (may be negative)
+    r_squared_imag: float = float("nan")
     ranking: list[RankedOut]
     selection_warnings: list[str]
     plot: SpectrumPlot

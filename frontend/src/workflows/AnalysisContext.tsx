@@ -11,9 +11,10 @@ export interface FitReq {
   dcSigma: "" | "on" | "off"; // "" = let the model choice decide
 }
 
-// The wire shape of the customize controls. The DC-σ toggle is NOT a forced family — it
-// constrains the backend's auto-selection panel to families with(out) a DC term, and is
-// ignored (greyed out in the UI) when an explicit family is forced.
+// The wire shape of the customize controls. The three controls COMPOSE: a family, a pole count,
+// and a DC-σ term combine into one model (e.g. Debye + 2 poles + DC σ). With family on auto, the
+// DC-σ toggle/pole count instead constrain the candidate panel. The UI only enables poles/DC for the
+// ladder families (auto, Debye, Cole-Cole), so a non-composable combination is never sent.
 export function toFitBody(r: FitReq): {
   model: string | null;
   n_poles: number | null;
@@ -22,7 +23,7 @@ export function toFitBody(r: FitReq): {
   return {
     model: r.model || null,
     n_poles: r.poles ? Number(r.poles) : null,
-    dc_sigma: r.model || r.dcSigma === "" ? null : r.dcSigma === "on",
+    dc_sigma: r.dcSigma === "" ? null : r.dcSigma === "on",
   };
 }
 

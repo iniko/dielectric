@@ -75,12 +75,14 @@ def main() -> None:
 
     # 4. HYPOTHESIS & FIT — which model? Let AICc + identifiability decide, but you can override.
     print("\n[4] Hypothesis: a conductive, high-water sample needs a relaxation + a DC-conduction "
-          "term. Testing it against 8 candidate models by AICc...")
+          "term. Testing it against 11 candidate models by AICc...")
     sel = select_model(spectrum)
     print(sel.table())
     fit = sel.chosen.result
-    print(f"\n    → Recommended: {sel.recommended.label}. (Override with select_model(s, "
-          f"force_model=..., n_poles=...); degenerate fits are flagged and never recommended.)")
+    print(f"\n    → Recommended: {sel.recommended.label}.")
+    print(f"      {sel.rationale}")
+    print("      (Override with select_model(s, force_model='Debye', n_poles=2, dc_sigma=True), "
+          "composing family × poles × DC σ; degenerate fits are flagged and never recommended.)")
     print("    " + fit.summary().replace("\n", "\n    "))
 
     # 5. VERIFY — Kramers-Kronig causality, literature comparison, known-reference QC.

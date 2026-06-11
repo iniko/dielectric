@@ -12,7 +12,7 @@ import warnings
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import TypedDict, cast
 
 import numpy as np
 
@@ -24,7 +24,7 @@ from dielectric.comparison import (
     static_permittivity_uncertainty,
 )
 from dielectric.convention import ConventionWarning
-from dielectric.fitting import select_model
+from dielectric.fitting import model_info, select_model
 from dielectric.fitting.result import FitResult
 from dielectric.fitting.selection import ModelSelectionResult
 from dielectric.io import load_any
@@ -277,6 +277,31 @@ def _params_out(fit: FitResult) -> list[schemas.ParamOut]:
     ]
 
 
+class _ModelMeta(TypedDict):
+    structure: str
+    equation: str
+    rationale: str
+    msp_real: float
+    msp_imag: float
+    r_squared_real: float
+    r_squared_imag: float
+
+
+def _model_meta(sel: ModelSelectionResult) -> _ModelMeta:
+    """Structure/equation/rationale + per-component goodness — shared by fit & analyze payloads."""
+    info = model_info(sel.chosen.label)
+    fit = sel.chosen.result
+    return {
+        "structure": info.description,
+        "equation": info.equation,
+        "rationale": sel.rationale,
+        "msp_real": _finite(fit.msp_real),
+        "msp_imag": _finite(fit.msp_imag),
+        "r_squared_real": _finite(fit.r_squared_real),
+        "r_squared_imag": _finite(fit.r_squared_imag),
+    }
+
+
 def _ranking_out(sel: ModelSelectionResult) -> list[schemas.RankedOut]:
     return [
         schemas.RankedOut(
@@ -287,6 +312,7 @@ def _ranking_out(sel: ModelSelectionResult) -> list[schemas.RankedOut]:
             flag=("overparam" if rf.overparameterized else "degenerate" if rf.degenerate else ""),
             chosen=rf.label == sel.chosen.label,
             recommended=rf.label == sel.recommended.label,
+            excluded_reason=rf.excluded_reason,
         )
         for rf in sel.ranking
     ]
@@ -327,6 +353,7 @@ def fit_campaign(campaign_id: str, req: schemas.FitRequest) -> schemas.FitOut:
                 chi2_reduced=_finite(fit.chi2_reduced), aicc=_finite(fit.aicc),
                 ranking=_ranking_out(sel), selection_warnings=list(sel.warnings),
                 plot=_plot(spectrum, fit.model), residual=_residual_series(fit),
+                **_model_meta(sel),
             ))
             cache[ms.sample_id] = {"fit": fit, "selection": sel, "spectrum": spectrum,
                                    "type_a": ta, "band": band}
@@ -783,7 +810,7 @@ def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.C
                 params=_params_out(fit), r_squared=fit.r_squared,
                 chi2_reduced=_finite(fit.chi2_reduced),
                 aicc=_finite(fit.aicc), ranking=_ranking_out(sel),
-                selection_warnings=list(sel.warnings),
+                selection_warnings=list(sel.warnings), **_model_meta(sel),
                 kk=schemas.KKOut(residual_rms=kk.residual_rms, consistent=kk.is_consistent,
                                  truncation_estimate=kk.truncation_estimate),
                 closest_materials=[

@@ -38,6 +38,13 @@ class FitResult:
     # Per-point σ the fit actually weighted by (real part = σ for ε', imag = σ for ε''); None when
     # the fit was unweighted. Lets callers form standardized residuals whose Σ(·²) == χ².
     sigma_used: ComplexArray | None = None
+    # Per-component goodness of fit. msp = mean squared pull (residual/σ, or raw residual when
+    # unweighted) for ε' and ε'' separately — the honest "does it fit within Type A uncertainty"
+    # split. r_squared_real/imag are variance-explained per component (secondary; may be negative).
+    msp_real: float = float("nan")
+    msp_imag: float = float("nan")
+    r_squared_real: float = float("nan")
+    r_squared_imag: float = float("nan")
 
     # -- goodness of fit ------------------------------------------------------------------------
 

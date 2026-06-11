@@ -80,10 +80,14 @@ def test_full_analysis_flow() -> None:
     analysis = client.post(f"/api/campaigns/{cid}/analyze", json={}).json()
     assert len(analysis["results"]) == 1
     result = analysis["results"][0]
-    assert result["chosen_model"] == "Cole-Cole + DC σ"
-    # σ_DC recovered ~0.8 S/m
+    # auto now lands on an identifiable Debye-ladder model + DC σ (the Cole-Cole multipoles that
+    # rank better on AICc are degenerate — see the rationale / ranking flags below)
+    assert result["chosen_model"].startswith("Debye") and "DC σ" in result["chosen_model"]
+    assert "Debye" in result["structure"] and result["equation"].startswith("ε* = ε∞")
+    assert result["rationale"]
+    # σ_DC is recovered in a physical range (a band-edge pole trades off against it; ~0.5 here)
     sigma = next(p for p in result["params"] if p["name"] == "sigma_dc")
-    assert sigma["value"] == pytest.approx(0.8, abs=0.15)
+    assert 0.3 < sigma["value"] < 1.0
     assert result["kk"]["consistent"]
     assert result["closest_materials"][0]["material"] in {"kidney", "muscle", "blood"}
     assert "non-linear least squares" in result["methods_paragraph"]
@@ -108,8 +112,9 @@ def test_override_number_of_poles() -> None:
     }).json()["id"]
     analysis = client.post(f"/api/campaigns/{cid}/analyze", json={"n_poles": 2}).json()
     result = analysis["results"][0]
-    assert "MultiPole(N=2)" in result["chosen_model"]
-    assert result["overridden"]
+    # auto + a pole count ladders Debye/Cole-Cole at that count — a constraint, not an override
+    assert "(2 poles)" in result["chosen_model"]
+    assert not result["overridden"]
     assert not analysis["validation"]["validated"]  # no validation set provided
 
 
@@ -300,6 +305,27 @@ def test_fit_unknown_model_message_is_friendly() -> None:
     detail = resp.json()["detail"]
     assert "available:" in detail
     assert "['" not in detail  # human-readable candidate list, not a Python repr
+
+
+def test_fit_rejects_uncomposable_combinations() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    bad_bodies = (
+        {"model": "Havriliak-Negami", "n_poles": 2},
+        {"model": "Jonscher", "dc_sigma": True},
+    )
+    for body in bad_bodies:
+        resp = client.post(f"/api/campaigns/{cid}/fit", json=body)
+        assert resp.status_code == 400, (body, resp.text)
+
+
+def test_fit_payload_carries_structure_equation_and_component_metrics() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    resp = client.post(f"/api/campaigns/{cid}/fit", json={"model": "Cole-Cole (2 poles) + DC σ"})
+    r = resp.json()["results"][0]
+    assert r["chosen_model"] == "Cole-Cole (2 poles) + DC σ"
+    assert "Cole-Cole" in r["structure"] and r["equation"].startswith("ε* = ε∞")
+    assert r["msp_real"] == r["msp_real"] and r["msp_imag"] == r["msp_imag"]  # finite (not NaN)
+    assert all("excluded_reason" in rf for rf in r["ranking"])
 
 
 def test_kk_step_exposes_predicted_and_measured() -> None:

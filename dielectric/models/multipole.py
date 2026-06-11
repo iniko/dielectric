@@ -6,6 +6,9 @@ the saline/tissue ``h02`` data (water relaxation + a β-dispersion + ionic condu
 
 This model exposes a **flat** parameter vector (``eps_inf, delta_eps_1, tau_1, alpha_1, ...,
 [sigma_dc]``) so the generic NLLS engine can fit it without knowing its internal term structure.
+With ``fixed_alpha=True`` it becomes the **Debye ladder**: the α of every pole is pinned (held at
+its construction value, normally 0) and dropped from the fitted vector, so each pole is an ideal
+unbroadened relaxation. This is how "Debye (N poles) + DC σ" is realised.
 """
 
 from __future__ import annotations
@@ -27,6 +30,15 @@ _MULTIPOLE = Provenance(
     doi="10.1063/1.1750906",
 )
 
+#: Provenance for the Debye-ladder mode (``fixed_alpha=True``): α pinned at 0, so each pole is an
+#: ideal Debye relaxation rather than a broadened Cole-Cole one.
+DEBYE_SUM = Provenance(
+    authors="Debye, P.",
+    year=1929,
+    title="Sum of N Debye relaxations with an optional DC-conductivity term",
+    source="multi-term form after Debye, Polar Molecules (Chemical Catalog Co.)",
+)
+
 #: A single Cole-Cole pole: (Δε, τ [s], α).
 ColeColeTerm = tuple[float, float, float]
 
@@ -43,6 +55,10 @@ class MultiPoleRelaxation(DielectricModel):
     eps_inf: float
     terms: tuple[ColeColeTerm, ...]
     sigma_dc: float | None = None
+    # When True this is the **Debye ladder**: every pole's α is pinned (held at its construction
+    # value, normally 0) and excluded from the fitted parameter vector — ideal relaxations, no
+    # broadening. The shape of ``epsilon`` is unchanged; only which params the fitter sees differs.
+    fixed_alpha: bool = False
     provenance: Provenance = field(default=_MULTIPOLE)
 
     def __post_init__(self) -> None:
@@ -61,7 +77,9 @@ class MultiPoleRelaxation(DielectricModel):
     def param_names(self) -> tuple[str, ...]:  # type: ignore[override]
         names: list[str] = ["eps_inf"]
         for i in range(1, self.n_poles + 1):
-            names += [f"delta_eps_{i}", f"tau_{i}", f"alpha_{i}"]
+            names += [f"delta_eps_{i}", f"tau_{i}"]
+            if not self.fixed_alpha:
+                names.append(f"alpha_{i}")
         if self.sigma_dc is not None:
             names.append("sigma_dc")
         return tuple(names)
@@ -72,7 +90,8 @@ class MultiPoleRelaxation(DielectricModel):
         for i, (de, tau, alpha) in enumerate(self.terms, start=1):
             out[f"delta_eps_{i}"] = float(de)
             out[f"tau_{i}"] = float(tau)
-            out[f"alpha_{i}"] = float(alpha)
+            if not self.fixed_alpha:
+                out[f"alpha_{i}"] = float(alpha)
         if self.sigma_dc is not None:
             out["sigma_dc"] = float(self.sigma_dc)
         return out
@@ -80,7 +99,9 @@ class MultiPoleRelaxation(DielectricModel):
     def with_params(self, values: dict[str, float]) -> MultiPoleRelaxation:
         p = self.params | values
         terms = tuple(
-            (p[f"delta_eps_{i}"], p[f"tau_{i}"], p[f"alpha_{i}"])
+            # α is pinned at its current value in Debye mode (not in ``values``); otherwise fitted.
+            (p[f"delta_eps_{i}"], p[f"tau_{i}"],
+             self.terms[i - 1][2] if self.fixed_alpha else p[f"alpha_{i}"])
             for i in range(1, self.n_poles + 1)
         )
         sigma = p["sigma_dc"] if self.sigma_dc is not None else None
