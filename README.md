@@ -142,11 +142,14 @@ saline = d.get_material("saline", molarity=0.05)  # any molarity
 ## What's inside
 
 - **Models** (`DielectricModel` interface): Debye, Cole-Cole, Cole-Davidson, Havriliak-Negami,
-  Jonscher, a configurable **multi-pole** model (the "number of poles" knob), mixing rules
-  (Maxwell-Garnett, Bruggeman, Looyenga), and a composable DC-conductivity term.
-- **Fitting**: generic NLLS on stacked real/imag residuals, log-τ optimisation, SEM weighting,
-  multistart; `FitResult` with AIC/AICc/BIC; **auto model-selection** with parsimony +
-  identifiability guardrails and a model/pole **override**.
+  Jonscher, composed by a **family × pole-count × DC-σ** grammar (Debye/Cole-Cole pole ladders),
+  mixing rules (Maxwell-Garnett, Bruggeman, Looyenga), and a composable DC-conductivity term.
+- **Fitting**: generic NLLS minimising the **weighted χ²** on stacked real/imag residuals, log-τ
+  optimisation, Type A SEM weighting, multistart; `FitResult` with AIC/AICc/BIC, reduced χ²,
+  standardized-residual pulls, and per-component goodness; **auto model-selection** with parsimony +
+  identifiability guardrails and a composable family/pole/DC-σ **override**. See
+  [docs/model-fitting.md](docs/model-fitting.md) for the models, the cost function, and how to read
+  R² vs reduced χ².
 - **Reference database** (biological-tissue emphasis): Gabriel/IT'IS tissues + water/saline/
   seawater/alcohols, each a pre-configured model with provenance and a **HIGH/VERIFY** confidence
   flag (unconfirmed values are never cited bare).

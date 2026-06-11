@@ -98,7 +98,8 @@ machine-readable `RankedFit.excluded_reason` per candidate + a `ModelSelectionRe
 sentence, and warns on χ²ᵣ ≫ 1 misfit and on poles peaking outside the measured band. `force_model=`
 (a family or full label), `n_poles=`, and `dc_sigma=` **compose** into one forced model (a conflict
 raises); given alone, `n_poles`/`dc_sigma` constrain the panel and auto-select (not an override).
-Old `MultiPole(N=k)` labels are rejected with a grammar-help error.
+Old `MultiPole(N=k)` labels are rejected with a grammar-help error. The candidate models, the exact
+cost function, and the R²-vs-reduced-χ² distinction are documented in `docs/model-fitting.md`.
 
 **Backend** (`backend/app/`): `services.py` is the ONLY place that touches the library; `main.py`
 is HTTP plumbing; `store.py` is an in-memory dict. Schemas (`schemas.py`) mirror library outputs and
