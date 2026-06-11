@@ -11,6 +11,7 @@ import type {
   SalineSweepOut,
   ScreeningRequest,
   SetSummary,
+  TypeASummaryOut,
   ValidationConfigRequest,
   ValidationDetailOut,
 } from "./types";
@@ -97,6 +98,14 @@ export async function analyze(
       body: JSON.stringify(body),
     }),
   );
+}
+
+export async function listSets(): Promise<SetSummary[]> {
+  return json(await apiFetch("/api/sets"));
+}
+
+export async function getTypeASummary(setId: string): Promise<TypeASummaryOut> {
+  return json(await apiFetch(`/api/sets/${setId}/typea-summary`));
 }
 
 export async function getRepeats(setId: string, frequenciesGhz: number[]): Promise<RepeatsOut> {

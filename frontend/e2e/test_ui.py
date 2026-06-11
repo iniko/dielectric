@@ -43,7 +43,7 @@ with sync_playwright() as p:
     obs.append(("budget table present",
                 page.locator("text=combined standard uncertainty").count() >= 1))
     obs.append(("budget example banner", page.locator("text=example values").count() >= 1))
-    nominal = page.locator('input[type="number"]').first
+    nominal = page.locator('input[inputmode="decimal"]').first  # the measurand-nominal field
     nominal.fill("60")
     page.wait_for_timeout(300)
     obs.append(("budget stale notice", page.locator("text=inputs changed").count() >= 1))
@@ -53,6 +53,12 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
     obs.append(("stale notice clears on recompute",
                 page.locator("text=inputs changed").count() == 0))
+    obs.append(("sensitivity column header", page.locator("text=cᵢ").count() >= 1))
+    obs.append(("budget export/import controls",
+                page.locator("text=export .json").count() >= 1
+                and page.locator("text=import .json").count() >= 1))
+    obs.append(("import-from-batch control",
+                page.get_by_role("button", name="Import Type A from a loaded batch…").count() >= 1))
 
     # (3) Analysis tab — step 1: Load (batch-centric)
     page.get_by_role("button", name="Dielectric Analysis").click()
@@ -164,6 +170,19 @@ with sync_playwright() as p:
                 page.get_by_role("button", name="Download HTML report").count() >= 1))
     obs.append(("combined campaign report", page.locator("text=Full campaign report").count() >= 1))
     page.screenshot(path="/tmp/diel_step7_report.png", full_page=True)
+
+    # (11) Budget tab again — import the real Type A term from a batch loaded above
+    page.get_by_role("button", name="Uncertainty Budget").click()
+    page.wait_for_timeout(500)
+    page.get_by_role("button", name="Import Type A from a loaded batch…").click()
+    page.wait_for_timeout(1000)
+    page.get_by_role("button", name="Import", exact=True).click()
+    page.wait_for_timeout(1500)
+    obs.append(("Type A imported from batch",
+                page.locator("text=/imported median ε. SEM/").count() >= 1))
+    measurand_value = page.get_by_placeholder("e.g. ε′ at 2.45 GHz, 25 °C").input_value()
+    obs.append(("import sets measurand annotation", "median over" in measurand_value))
+    page.screenshot(path="/tmp/diel_budget_import.png", full_page=True)
 
     browser.close()
 

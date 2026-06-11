@@ -68,6 +68,7 @@ from dielectric.uncertainty.gum import GUMBudget, UncertaintyComponent
 from dielectric.uncertainty.typea import (
     TypeABand,
     TypeAResult,
+    budget_scalars,
     combine_repeats,
     confidence_band,
     repeat_distribution,
@@ -423,6 +424,35 @@ def _screening_info(ta: TypeAResult) -> schemas.ScreeningInfo:
         manual_keep=list(ta.manual_keep),
         method=_SCREEN_METHOD,
         citation=_SCREEN_CITATION,
+    )
+
+
+def list_sets() -> list[schemas.SetSummary]:
+    """Every set currently in the store — lets the Budget tab see Analysis-tab uploads."""
+    out = [
+        set_summary(sid, ms, "measurement", corrected=False)
+        for sid, ms in STORE.measurement_sets.items()
+    ]
+    out += [
+        set_summary(sid, vs, "validation", corrected=False)
+        for sid, vs in STORE.validation_sets.items()
+    ]
+    return out
+
+
+def typea_summary(set_id: str) -> schemas.TypeASummaryOut:
+    """One set's Type A statistics scalarised for a budget term (median ε' SEM over the band)."""
+    obj = _get_set(set_id)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ta = _screened_type_a(obj, set_id)
+        scalars = budget_scalars(ta)
+        band = ta.mean.band_hz
+    return schemas.TypeASummaryOut(
+        set_id=set_id, name=obj.sample_id, n_used=ta.n_repeats_used, dof=scalars.dof,
+        eps_real_median=scalars.eps_real_median,
+        eps_real_sem_median=scalars.eps_real_sem_median,
+        band_ghz=(band[0] / 1e9, band[1] / 1e9),
     )
 
 

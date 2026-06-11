@@ -145,6 +145,41 @@ def test_budget_validation_rejects_bad_components() -> None:
         assert resp.status_code == 422, comp
 
 
+def test_budget_type_a_requires_dof() -> None:
+    resp = client.post("/api/budget", json={
+        "nominal_value": 58.0,
+        "components": [{"name": "rep", "standard_uncertainty": 0.5, "kind": "A"}],  # no dof
+    })
+    assert resp.status_code == 422
+    assert "dof" in resp.text
+
+
+def test_list_sets_and_typea_summary() -> None:
+    meas = _upload("h02s19m*.csv", "measurement", limit=6)
+    listed = client.get("/api/sets").json()
+    assert any(s["id"] == meas["id"] and s["role"] == "measurement" for s in listed)
+
+    resp = client.get(f"/api/sets/{meas['id']}/typea-summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == meas["name"]
+    assert body["dof"] == body["n_used"] - 1 >= 1
+    assert body["eps_real_sem_median"] > 0
+    assert 0 < body["eps_real_median"] < 100  # plausible ε' for the bundled tissue data
+    # the imported term composes into a valid budget
+    budget = client.post("/api/budget", json={
+        "nominal_value": body["eps_real_median"],
+        "components": [{
+            "name": "repeatability (Type A)",
+            "standard_uncertainty": body["eps_real_sem_median"],
+            "dof": body["dof"], "kind": "A",
+        }],
+    })
+    assert budget.status_code == 200
+
+    assert client.get("/api/sets/nope/typea-summary").status_code == 404
+
+
 def test_budget_zero_nominal_and_infinite_dof() -> None:
     resp = client.post("/api/budget", json={
         "nominal_value": 0.0,

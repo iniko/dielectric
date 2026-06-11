@@ -45,6 +45,11 @@ class UncertaintyComponent:
             )
         if self.kind not in ("A", "B"):
             raise ValueError(f"kind must be 'A' or 'B', got {self.kind!r}")
+        if self.kind == "A" and not math.isfinite(self.dof):
+            raise ValueError(
+                f"a Type A component must state finite dof (n_repeats - 1), "
+                f"component {self.name!r} has dof = inf"
+            )
 
     @property
     def contribution(self) -> float:

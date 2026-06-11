@@ -350,6 +350,16 @@ export interface CompareOut {
   differences: BatchDifference[];
 }
 
+export interface TypeASummaryOut {
+  set_id: string;
+  name: string;
+  n_used: number;
+  dof: number; // n_used - 1
+  eps_real_median: number;
+  eps_real_sem_median: number;
+  band_ghz: [number, number];
+}
+
 export interface BudgetComponentIn {
   name: string;
   standard_uncertainty: number;

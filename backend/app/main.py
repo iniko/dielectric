@@ -156,6 +156,21 @@ def kk(campaign_id: str) -> schemas.KKDetailOut:
     return services.kk_campaign(campaign_id)
 
 
+@app.get("/api/sets", response_model=list[schemas.SetSummary])
+def list_sets() -> list[schemas.SetSummary]:
+    return services.list_sets()
+
+
+@app.get("/api/sets/{set_id}/typea-summary", response_model=schemas.TypeASummaryOut)
+def typea_summary(set_id: str) -> schemas.TypeASummaryOut:
+    try:
+        return services.typea_summary(set_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:  # e.g. < 2 used repeats
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.get("/api/sets/{set_id}/repeats", response_model=schemas.RepeatsOut)
 def repeats(set_id: str, frequencies: str | None = None) -> schemas.RepeatsOut:
     try:

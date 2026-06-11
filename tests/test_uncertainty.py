@@ -18,6 +18,7 @@ from dielectric.uncertainty import (
     repeat_distribution,
 )
 from dielectric.uncertainty.gum import GUMBudget
+from dielectric.uncertainty.typea import budget_scalars
 
 
 def _repeats(n: int = 10, noise: float = 0.05, seed: int = 0) -> tuple[Spectrum, ...]:
@@ -214,3 +215,28 @@ def test_gum_table_infinite_dof_prints_inf() -> None:
     table = GUMBudget("x", 10.0, (UncertaintyComponent("b", 1.0),)).table()
     assert table.split("\n")[3].rstrip().endswith("inf")  # the component row's dof column
     assert "effective dof = inf" in table
+
+
+def test_type_a_component_requires_finite_dof() -> None:
+    with pytest.raises(ValueError, match="finite dof"):
+        UncertaintyComponent("rep", 0.5, kind="A")  # default dof = inf
+    assert UncertaintyComponent("rep", 0.5, dof=9, kind="A").dof == 9
+
+
+def test_budget_scalars_median_over_band() -> None:
+    ta = combine_repeats(_repeats(n=10))
+    s = budget_scalars(ta)
+    assert s.dof == ta.n_repeats_used - 1
+    assert s.eps_real_median == pytest.approx(float(np.median(ta.mean.eps_real)))
+    assert ta.mean.sem is not None
+    assert s.eps_real_sem_median == pytest.approx(float(np.median(ta.mean.sem.real)))
+    assert s.eps_real_sem_median > 0
+    # a valid Type A budget component can be built straight from it
+    comp = UncertaintyComponent.type_a("rep", s.eps_real_sem_median, s.dof)
+    assert comp.kind == "A"
+
+
+def test_budget_scalars_rejects_single_repeat() -> None:
+    ta = combine_repeats(_repeats(n=1))
+    with pytest.raises(ValueError, match="repeats"):
+        budget_scalars(ta)

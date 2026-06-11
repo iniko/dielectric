@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SetSummary(BaseModel):
@@ -414,6 +414,26 @@ class BudgetComponentIn(BaseModel):
     sensitivity: float = Field(default=1.0, allow_inf_nan=False)
     dof: float | None = Field(default=None, gt=0)  # None = infinite (JSON has no inf)
     kind: Literal["A", "B"] = "B"
+
+    @model_validator(mode="after")
+    def _type_a_needs_dof(self) -> BudgetComponentIn:
+        if self.kind == "A" and self.dof is None:
+            raise ValueError(
+                f"Type A component {self.name!r} must state finite dof (n_repeats - 1)"
+            )
+        return self
+
+
+class TypeASummaryOut(BaseModel):
+    """A measurement set's Type A statistics reduced to one budget term (median over the band)."""
+
+    set_id: str
+    name: str
+    n_used: int
+    dof: float  # n_used - 1
+    eps_real_median: float
+    eps_real_sem_median: float
+    band_ghz: tuple[float, float]
 
 
 class BudgetRequest(BaseModel):

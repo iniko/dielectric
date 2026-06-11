@@ -51,6 +51,33 @@ class TypeAResult:
 
 
 @dataclass(frozen=True)
+class TypeABudgetScalars:
+    """A Type A result reduced to one scalar budget term: the band **median** of ε' and its SEM.
+
+    A GUM budget quotes one number per component while the SEM varies with frequency; the median
+    over the band is the disclosed, robust choice (state it in the measurand definition).
+    """
+
+    eps_real_median: float
+    eps_real_sem_median: float
+    dof: float  # n_repeats_used - 1
+
+
+def budget_scalars(result: TypeAResult) -> TypeABudgetScalars:
+    """Reduce a :class:`TypeAResult` to a scalar Type A budget term (median over the band)."""
+    if result.n_repeats_used < 2:
+        raise ValueError(
+            f"a Type A budget term needs >= 2 used repeats, got {result.n_repeats_used}"
+        )
+    assert result.mean.sem is not None
+    return TypeABudgetScalars(
+        eps_real_median=float(np.median(result.mean.eps_real)),
+        eps_real_sem_median=float(np.median(result.mean.sem.real)),
+        dof=float(result.n_repeats_used - 1),
+    )
+
+
+@dataclass(frozen=True)
 class TypeABand:
     """Type A confidence band of a mean spectrum (mean ± k·SEM), in display quantities.
 
