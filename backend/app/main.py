@@ -286,4 +286,7 @@ def report(campaign_id: str, sample: str, fmt: str = "pdf") -> FileResponse:
 def budget(req: schemas.BudgetRequest) -> schemas.BudgetResult:
     if not req.components:
         raise HTTPException(400, "the budget needs at least one component")
-    return services.compute_budget(req)
+    try:
+        return services.compute_budget(req)
+    except ValueError as e:  # library-level validation the schema didn't catch
+        raise HTTPException(400, str(e)) from e

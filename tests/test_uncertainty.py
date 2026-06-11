@@ -172,3 +172,45 @@ def test_gum_large_dof_coverage_factor_near_two() -> None:
     budget = GUMBudget("x", 10.0, comps)
     assert budget.effective_dof == math.inf
     assert budget.coverage_factor(0.95) == pytest.approx(1.96, abs=0.02)
+
+
+def test_component_validation_fails_loud() -> None:
+    for bad_u in (-1.0, math.nan, math.inf):
+        with pytest.raises(ValueError, match="standard_uncertainty"):
+            UncertaintyComponent("u", bad_u)
+    for bad_dof in (0.0, -3.0, math.nan):
+        with pytest.raises(ValueError, match="dof"):
+            UncertaintyComponent("d", 1.0, dof=bad_dof)
+    with pytest.raises(ValueError, match="kind"):
+        UncertaintyComponent("k", 1.0, kind="C")
+    with pytest.raises(ValueError, match="sensitivity"):
+        UncertaintyComponent("s", 1.0, sensitivity=math.inf)
+    # zero uncertainty and infinite dof are legitimate
+    ok = UncertaintyComponent("ok", 0.0, dof=math.inf)
+    assert ok.contribution == 0.0
+
+
+def test_triangular_distribution_divisor() -> None:
+    c = UncertaintyComponent.triangular("t", half_width=0.6)
+    assert c.standard_uncertainty == pytest.approx(0.6 / math.sqrt(6.0))
+    assert c.kind == "B" and c.dof == math.inf
+
+
+def test_gum_table_aligns_with_long_names() -> None:
+    comps = (
+        UncertaintyComponent("repeatability (Type A)", 0.67, dof=13, kind="A"),
+        UncertaintyComponent("data inversion (instrument/probe software)", 1.74),
+    )
+    table = GUMBudget("ε'", 58.0, comps).table()
+    lines = table.split("\n")
+    header, sep = lines[1], lines[2]
+    assert len(header) == len(sep)
+    component_rows = lines[3 : 3 + len(comps)]
+    assert all(len(r) == len(sep) for r in component_rows)
+    assert "1000000000" not in table
+
+
+def test_gum_table_infinite_dof_prints_inf() -> None:
+    table = GUMBudget("x", 10.0, (UncertaintyComponent("b", 1.0),)).table()
+    assert table.split("\n")[3].rstrip().endswith("inf")  # the component row's dof column
+    assert "effective dof = inf" in table

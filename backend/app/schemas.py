@@ -6,6 +6,8 @@ any numerics of their own.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -407,11 +409,11 @@ class CompareOut(BaseModel):
 
 
 class BudgetComponentIn(BaseModel):
-    name: str
-    standard_uncertainty: float
-    sensitivity: float = 1.0
-    dof: float = float("inf")
-    kind: str = "B"
+    name: str = Field(min_length=1)
+    standard_uncertainty: float = Field(ge=0, allow_inf_nan=False)
+    sensitivity: float = Field(default=1.0, allow_inf_nan=False)
+    dof: float | None = Field(default=None, gt=0)  # None = infinite (JSON has no inf)
+    kind: Literal["A", "B"] = "B"
 
 
 class BudgetRequest(BaseModel):
@@ -426,15 +428,15 @@ class BudgetContribution(BaseModel):
     name: str
     kind: str
     contribution: float
-    dof: float
+    dof: float | None  # None = infinite
     percent: float
 
 
 class BudgetResult(BaseModel):
     combined_standard_uncertainty: float
-    effective_dof: float
+    effective_dof: float | None  # None = infinite
     coverage_factor: float
     expanded_uncertainty: float
-    relative_expanded: float
+    relative_expanded: float | None  # None when nominal == 0 (undefined)
     contributions: list[BudgetContribution]
     table: str

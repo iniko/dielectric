@@ -37,11 +37,22 @@ with sync_playwright() as p:
     obs.append(("tab Dielectric Analysis",
                 page.get_by_role("button", name="Dielectric Analysis").count() == 1))
 
-    # (2) Budget tab (unchanged sandbox)
+    # (2) Budget tab — GUM sandbox with example disclosure + stale-result indicator
     page.get_by_role("button", name="Uncertainty Budget").click()
     page.wait_for_selector("text=combined standard uncertainty", timeout=8000)
     obs.append(("budget table present",
                 page.locator("text=combined standard uncertainty").count() >= 1))
+    obs.append(("budget example banner", page.locator("text=example values").count() >= 1))
+    nominal = page.locator('input[type="number"]').first
+    nominal.fill("60")
+    page.wait_for_timeout(300)
+    obs.append(("budget stale notice", page.locator("text=inputs changed").count() >= 1))
+    obs.append(("example banner clears on edit",
+                page.locator("text=example values").count() == 0))
+    page.get_by_role("button", name="Compute budget").click()
+    page.wait_for_timeout(1500)
+    obs.append(("stale notice clears on recompute",
+                page.locator("text=inputs changed").count() == 0))
 
     # (3) Analysis tab — step 1: Load (batch-centric)
     page.get_by_role("button", name="Dielectric Analysis").click()

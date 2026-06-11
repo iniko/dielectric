@@ -795,23 +795,26 @@ def list_materials() -> list[schemas.MaterialOut]:
 
 def compute_budget(req: schemas.BudgetRequest) -> schemas.BudgetResult:
     comps = tuple(
-        UncertaintyComponent(c.name, c.standard_uncertainty, c.sensitivity, c.dof, c.kind)
+        UncertaintyComponent(
+            c.name, c.standard_uncertainty, c.sensitivity,
+            math.inf if c.dof is None else c.dof, c.kind,
+        )
         for c in req.components
     )
     budget = GUMBudget(req.measurand, req.nominal_value, comps, req.unit)
     uc = budget.combined_standard_uncertainty
     contributions = [
         schemas.BudgetContribution(
-            name=c.name, kind=c.kind, contribution=c.contribution, dof=c.dof,
+            name=c.name, kind=c.kind, contribution=c.contribution, dof=_finite_or_none(c.dof),
             percent=100.0 * (c.contribution**2) / (uc**2) if uc > 0 else 0.0,
         )
         for c in comps
     ]
     return schemas.BudgetResult(
-        combined_standard_uncertainty=uc, effective_dof=_finite(budget.effective_dof),
+        combined_standard_uncertainty=uc, effective_dof=_finite_or_none(budget.effective_dof),
         coverage_factor=budget.coverage_factor(req.coverage_level),
         expanded_uncertainty=budget.expanded_uncertainty(req.coverage_level),
-        relative_expanded=_finite(budget.relative_expanded),
+        relative_expanded=_finite_or_none(budget.relative_expanded),
         contributions=contributions, table=budget.table(req.coverage_level),
     )
 
@@ -943,3 +946,8 @@ def _finite(x: float) -> float:
     if math.isnan(x):
         return 0.0
     return x
+
+
+def _finite_or_none(x: float) -> float | None:
+    """JSON has no inf/nan — map non-finite to None where the schema models it explicitly."""
+    return x if math.isfinite(x) else None

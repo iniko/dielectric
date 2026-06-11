@@ -28,6 +28,24 @@ class UncertaintyComponent:
     kind: str = "B"  # "A" (statistical) or "B" (other)
     note: str = ""
 
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.standard_uncertainty) or self.standard_uncertainty < 0:
+            raise ValueError(
+                f"standard_uncertainty must be finite and >= 0, "
+                f"got {self.standard_uncertainty!r} for component {self.name!r}"
+            )
+        if not math.isfinite(self.sensitivity):
+            raise ValueError(
+                f"sensitivity must be finite, got {self.sensitivity!r} for component {self.name!r}"
+            )
+        if math.isnan(self.dof) or self.dof <= 0:
+            raise ValueError(
+                f"dof must be > 0 (use math.inf for Type B / unlimited), "
+                f"got {self.dof!r} for component {self.name!r}"
+            )
+        if self.kind not in ("A", "B"):
+            raise ValueError(f"kind must be 'A' or 'B', got {self.kind!r}")
+
     @property
     def contribution(self) -> float:
         return abs(self.sensitivity * self.standard_uncertainty)
@@ -44,6 +62,13 @@ class UncertaintyComponent:
     ) -> UncertaintyComponent:
         """Type B from a rectangular (uniform) distribution of half-width ``a``: u = a/√3."""
         return cls(name, half_width / math.sqrt(3.0), sensitivity, math.inf, "B", note)
+
+    @classmethod
+    def triangular(
+        cls, name: str, half_width: float, *, sensitivity: float = 1.0, note: str = ""
+    ) -> UncertaintyComponent:
+        """Type B from a triangular distribution of half-width ``a``: u = a/√6."""
+        return cls(name, half_width / math.sqrt(6.0), sensitivity, math.inf, "B", note)
 
     @classmethod
     def relative_input(
@@ -85,7 +110,7 @@ class GUMBudget:
             return math.inf
         denom = 0.0
         for c in self.components:
-            if math.isfinite(c.dof) and c.dof > 0:
+            if math.isfinite(c.dof):
                 denom += c.contribution**4 / c.dof
         if denom == 0:
             return math.inf
@@ -112,20 +137,24 @@ class GUMBudget:
         return u / abs(self.nominal_value) if self.nominal_value else math.nan
 
     def table(self, level: float = 0.95) -> str:
+        name_w = max(34, max((len(c.name) for c in self.components), default=0) + 1)
+        width = name_w + 5 + 14 + 8
         rows = [
             f"GUM budget for {self.measurand} = {self.nominal_value:.6g} {self.unit}".rstrip(),
-            f"{'component':<34}{'kind':>5}{'u_i·c_i':>14}{'dof':>8}",
-            "-" * 61,
+            f"{'component':<{name_w}}{'kind':>5}{'u_i·c_i':>14}{'dof':>8}",
+            "-" * width,
         ]
         for c in self.components:
             dof = "inf" if not math.isfinite(c.dof) else f"{c.dof:.0f}"
-            rows.append(f"{c.name:<34}{c.kind:>5}{c.contribution:>14.4g}{dof:>8}")
+            rows.append(f"{c.name:<{name_w}}{c.kind:>5}{c.contribution:>14.4g}{dof:>8}")
         uc = self.combined_standard_uncertainty
         k = self.coverage_factor(level)
+        nu = self.effective_dof
+        nu_txt = f"{nu:.1f}" if math.isfinite(nu) else "inf"
         rows += [
-            "-" * 61,
-            f"{'combined standard uncertainty u_c':<34}{'':>5}{uc:>14.4g}",
-            f"effective dof = {self.effective_dof:.1f}   k({level:.0%}) = {k:.3f}   "
+            "-" * width,
+            f"{'combined standard uncertainty u_c':<{name_w}}{'':>5}{uc:>14.4g}",
+            f"effective dof = {nu_txt}   k({level:.0%}) = {k:.3f}   "
             f"U = {self.expanded_uncertainty(level):.4g} {self.unit}".rstrip(),
         ]
         return "\n".join(rows)

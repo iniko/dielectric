@@ -128,6 +128,34 @@ def test_budget_sandbox() -> None:
     # the input/inversion term is the largest contributor
     top = max(body["contributions"], key=lambda c: c["percent"])
     assert top["name"] == "input/inversion"
+    # omitted dof means infinite, modelled as JSON null (not a numeric sentinel)
+    assert body["contributions"][1]["dof"] is None
+
+
+def test_budget_validation_rejects_bad_components() -> None:
+    base = {"nominal_value": 58.0}
+    bad = [
+        {"name": "u<0", "standard_uncertainty": -1.0},
+        {"name": "dof=0", "standard_uncertainty": 0.5, "dof": 0},
+        {"name": "kind", "standard_uncertainty": 0.5, "kind": "C"},
+        {"name": "", "standard_uncertainty": 0.5},
+    ]
+    for comp in bad:
+        resp = client.post("/api/budget", json={**base, "components": [comp]})
+        assert resp.status_code == 422, comp
+
+
+def test_budget_zero_nominal_and_infinite_dof() -> None:
+    resp = client.post("/api/budget", json={
+        "nominal_value": 0.0,
+        "components": [{"name": "cal", "standard_uncertainty": 1.0, "kind": "B"}],
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["relative_expanded"] is None  # undefined at nominal 0, not 0.0%
+    assert body["effective_dof"] is None  # all Type B → infinite
+    assert "effective dof = inf" in body["table"]
+    assert "1e+308" not in resp.text and "1000000000" not in body["table"]
 
 
 def test_errors() -> None:

@@ -81,7 +81,7 @@ export function Badge({
   );
 }
 
-export function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
+export function Stat({ label, value, unit }: { label: ReactNode; value: string; unit?: string }) {
   return (
     <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-ink-850)] px-4 py-3">
       <div className="text-xs uppercase tracking-wider text-slate-500">{label}</div>
@@ -93,7 +93,7 @@ export function Stat({ label, value, unit }: { label: string; value: string; uni
   );
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-500">

@@ -18,10 +18,10 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from matplotlib.patches import FancyBboxPatch  # noqa: E402
-from PIL import Image  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import FancyBboxPatch
+from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 NAVY = "#0a1626"
@@ -82,7 +82,8 @@ def write_icns(master: Image.Image) -> None:
         px = size * scale
         name = f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png"
         master.resize((px, px), Image.LANCZOS).save(iconset / name)
-    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(HERE / "icon.icns")], check=True)
+    out = HERE / "icon.icns"
+    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out)], check=True)
     print("wrote", HERE / "icon.icns")
 
 

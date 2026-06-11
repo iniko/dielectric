@@ -354,24 +354,24 @@ export interface BudgetComponentIn {
   name: string;
   standard_uncertainty: number;
   sensitivity: number;
-  dof: number;
-  kind: string;
+  dof: number | null; // null = infinite (JSON has no inf)
+  kind: "A" | "B";
 }
 
 export interface BudgetContribution {
   name: string;
   kind: string;
   contribution: number;
-  dof: number;
+  dof: number | null; // null = infinite
   percent: number;
 }
 
 export interface BudgetResult {
   combined_standard_uncertainty: number;
-  effective_dof: number;
+  effective_dof: number | null; // null = infinite
   coverage_factor: number;
   expanded_uncertainty: number;
-  relative_expanded: number;
+  relative_expanded: number | null; // null when nominal == 0 (undefined)
   contributions: BudgetContribution[];
   table: string;
 }
