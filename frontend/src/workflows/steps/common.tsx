@@ -46,7 +46,20 @@ interface AsyncState<T> {
   reload: () => void;
 }
 
+// Returns `value` after it has been stable for `ms`. Initializes to `value`, so the first
+// render (mount) is NOT delayed — only subsequent changes are debounced.
+export function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
+
 // Run an async fetch whenever `deps` change; expose data/loading/error and a manual reload.
+// NB: `data` persists across a re-run that errors (setData fires only on success) — steps rely
+// on this to keep showing the last successful result, marked stale, when a request fails.
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);

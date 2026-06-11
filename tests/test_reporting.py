@@ -95,6 +95,22 @@ def test_methods_paragraph_mentions_key_elements() -> None:
     assert "dielectric toolkit" in text
 
 
+def test_methods_paragraph_override_phrased_as_despite() -> None:
+    """An analyst override that ranks worse must read "chosen despite ΔAICc = X in favour of",
+    never "preferred over ... by ΔAICc = -X" (which endorses a worse fit)."""
+    import warnings as _w
+
+    from dielectric.fitting import select_model
+
+    spectrum, _ = _fit()
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+        sel = select_model(spectrum, force_model="Debye")  # far worse than the recommendation
+    text = methods_paragraph(sel.chosen.result, selection=sel, n_repeats=15)
+    assert "chosen despite ΔAICc = " in text
+    assert "by ΔAICc = -" not in text
+
+
 # -- tables ------------------------------------------------------------------------------------
 
 

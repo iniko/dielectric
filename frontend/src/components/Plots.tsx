@@ -26,6 +26,11 @@ const baseLayout = {
 
 const config = { displayModeBar: false, responsive: true };
 
+// Frequency axes are plotted in GHz (Plotly's log-axis SI ticks render 1e9 as "1B", which no RF
+// audience reads as gigahertz). Conversions like σ = 2πf·ε₀·ε″ keep using the raw Hz arrays.
+const toGHz = (f: number[]): number[] => f.map((v) => v / 1e9);
+const freqAxis = { title: { text: "frequency (GHz)" }, type: "log" as const, gridcolor: GRID };
+
 export function ColeColePlot({ data }: { data: SpectrumPlot }) {
   return (
     <Plot
@@ -69,7 +74,7 @@ export function BodePlot({ data, mode = "loss" }: { data: SpectrumPlot; mode?: L
     <Plot
       data={[
         {
-          x: data.frequency_hz,
+          x: toGHz(data.frequency_hz),
           y: data.eps_real,
           mode: "markers",
           type: "scatter",
@@ -77,7 +82,7 @@ export function BodePlot({ data, mode = "loss" }: { data: SpectrumPlot; mode?: L
           marker: { color: SIGNAL, size: 5 },
         },
         {
-          x: data.fit_frequency_hz,
+          x: toGHz(data.fit_frequency_hz),
           y: data.fit_eps_real,
           mode: "lines",
           type: "scatter",
@@ -85,7 +90,7 @@ export function BodePlot({ data, mode = "loss" }: { data: SpectrumPlot; mode?: L
           line: { color: SIGNAL, width: 2 },
         },
         {
-          x: data.frequency_hz,
+          x: toGHz(data.frequency_hz),
           y: asLossy(data.loss, data.frequency_hz, mode),
           mode: "markers",
           type: "scatter",
@@ -94,7 +99,7 @@ export function BodePlot({ data, mode = "loss" }: { data: SpectrumPlot; mode?: L
           marker: { color: VIOLET, size: 5 },
         },
         {
-          x: data.fit_frequency_hz,
+          x: toGHz(data.fit_frequency_hz),
           y: asLossy(data.fit_loss, data.fit_frequency_hz, mode),
           mode: "lines",
           type: "scatter",
@@ -105,7 +110,7 @@ export function BodePlot({ data, mode = "loss" }: { data: SpectrumPlot; mode?: L
       ]}
       layout={{
         ...baseLayout,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: "ε′" }, gridcolor: GRID, zeroline: false },
         yaxis2: {
           title: { text: lossAxisTitle(mode) },
@@ -133,9 +138,10 @@ export function RepeatBandPlot({
   quantity: "eps" | "sigma" | "loss";
 }) {
   const isEps = quantity === "eps";
-  const x = band.frequency_hz;
+  const fHz = band.frequency_hz;
+  const x = toGHz(fHz);
   // σ and ε″ differ by σ = 2πf·ε₀·ε″, so the loss band is the σ band converted point-by-point.
-  const conv = (v: number, i: number) => (quantity === "loss" ? toLoss(v, x[i]) : v);
+  const conv = (v: number, i: number) => (quantity === "loss" ? toLoss(v, fHz[i]) : v);
   const mean = isEps ? band.eps_real : band.sigma.map(conv);
   const lo = isEps ? band.eps_real_lo : band.sigma_lo.map(conv);
   const hi = isEps ? band.eps_real_hi : band.sigma_hi.map(conv);
@@ -168,7 +174,7 @@ export function RepeatBandPlot({
       ]}
       layout={{
         ...baseLayout,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: yTitle }, gridcolor: GRID, zeroline: false },
       }}
       config={config}
@@ -185,14 +191,14 @@ export function KKPlot({ kk }: { kk: KKDetail }) {
     <Plot
       data={[
         {
-          x: kk.frequency_hz,
+          x: toGHz(kk.frequency_hz),
           y: kk.measured_eps_real,
           mode: "markers",
           name: "measured ε′",
           marker: { color: SIGNAL, size: 5 },
         },
         {
-          x: kk.frequency_hz,
+          x: toGHz(kk.frequency_hz),
           y: kk.predicted_eps_real,
           mode: "lines",
           name: "KK-predicted ε′",
@@ -201,7 +207,7 @@ export function KKPlot({ kk }: { kk: KKDetail }) {
       ]}
       layout={{
         ...baseLayout,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: "ε′" }, gridcolor: GRID, zeroline: false },
       }}
       config={config}
@@ -237,17 +243,17 @@ export function ResidualPlot({
     return (
       <Plot
         data={[
-          { x: f, y: residual.norm_eps_real, mode: "markers", name: "ε′ pull",
+          { x: toGHz(f), y: residual.norm_eps_real, mode: "markers", name: "ε′ pull",
             marker: { color: SIGNAL, size: 5 } },
-          { x: f, y: residual.norm_loss, mode: "markers", name: "ε″ pull",
+          { x: toGHz(f), y: residual.norm_loss, mode: "markers", name: "ε″ pull",
             marker: { color: VIOLET, size: 5 } },
         ]}
         layout={{
           ...baseLayout,
           shapes: [band(-1, 1, "rgba(45,212,191,0.10)"), line2(2), line2(-2)],
-          xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+          xaxis: freqAxis,
           yaxis: {
-            title: { text: "normalized residual (units of σ)" },
+            title: { text: "pull (residual / u)" },
             gridcolor: GRID, zeroline: true, zerolinecolor: "#475569",
           },
         }}
@@ -261,14 +267,14 @@ export function ResidualPlot({
   return (
     <Plot
       data={[
-        { x: f, y: residual.residual_eps_real, mode: "markers", name: "Δε′",
+        { x: toGHz(f), y: residual.residual_eps_real, mode: "markers", name: "Δε′",
           marker: { color: SIGNAL, size: 5 } },
-        { x: f, y: lossyResid, mode: "markers", name: mode === "sigma" ? "Δσ" : "Δε″",
+        { x: toGHz(f), y: lossyResid, mode: "markers", name: mode === "sigma" ? "Δσ" : "Δε″",
           yaxis: "y2", marker: { color: VIOLET, size: 5 } },
       ]}
       layout={{
         ...baseLayout,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: "Δε′" }, gridcolor: GRID, zeroline: true, zerolinecolor: "#475569" },
         yaxis2: {
           title: { text: mode === "sigma" ? "Δσ (S/m)" : "Δε″" },
@@ -296,11 +302,11 @@ export function SeriesPlot({
 }) {
   return (
     <Plot
-      data={[{ x, y, mode: "lines+markers", line: { color, width: 2 }, marker: { color, size: 4 } }]}
+      data={[{ x: toGHz(x), y, mode: "lines+markers", line: { color, width: 2 }, marker: { color, size: 4 } }]}
       layout={{
         ...baseLayout,
         showlegend: false,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: yTitle }, gridcolor: GRID, zeroline: false },
       }}
       config={config}
@@ -323,21 +329,21 @@ export function ReferenceOverlayPlot({
     <Plot
       data={[
         {
-          x: overlay.frequency_hz,
+          x: toGHz(overlay.frequency_hz),
           y: overlay.meas_eps_real,
           mode: "markers",
           name: "ε′ measured",
           marker: { color: SIGNAL, size: 5 },
         },
         {
-          x: overlay.frequency_hz,
+          x: toGHz(overlay.frequency_hz),
           y: overlay.ref_eps_real,
           mode: "lines",
           name: "ε′ reference",
           line: { color: SIGNAL, width: 2, dash: "dot" },
         },
         {
-          x: overlay.frequency_hz,
+          x: toGHz(overlay.frequency_hz),
           y: asLossy(overlay.meas_loss, overlay.frequency_hz, mode),
           mode: "markers",
           name: `${name} measured`,
@@ -345,7 +351,7 @@ export function ReferenceOverlayPlot({
           marker: { color: VIOLET, size: 5 },
         },
         {
-          x: overlay.frequency_hz,
+          x: toGHz(overlay.frequency_hz),
           y: asLossy(overlay.ref_loss, overlay.frequency_hz, mode),
           mode: "lines",
           name: `${name} reference`,
@@ -355,7 +361,7 @@ export function ReferenceOverlayPlot({
       ]}
       layout={{
         ...baseLayout,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: "ε′" }, gridcolor: GRID, zeroline: false },
         yaxis2: {
           title: { text: lossAxisTitle(mode) },
@@ -403,7 +409,7 @@ export function BatchOverlayPlot({
     }
     const y = field === "eps" ? s.eps_real : asLossy(s.loss, s.frequency_hz, mode);
     return {
-      x: s.frequency_hz, y, mode: "lines+markers", name: s.name,
+      x: toGHz(s.frequency_hz), y, mode: "lines+markers", name: s.name,
       line: { color, width: 2 }, marker: { color, size: 4 },
     };
   });
@@ -416,7 +422,7 @@ export function BatchOverlayPlot({
         }
       : {
           ...baseLayout,
-          xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+          xaxis: freqAxis,
           yaxis: {
             title: { text: field === "eps" ? "ε′" : lossAxisTitle(mode) },
             gridcolor: GRID,
@@ -455,20 +461,20 @@ export function DiffPlot({
   return (
     <Plot
       data={[
-        { x: frequency, y: lo, mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" },
+        { x: toGHz(frequency), y: lo, mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" },
         {
-          x: frequency, y: hi, mode: "lines", line: { width: 0 }, fill: "tonexty",
+          x: toGHz(frequency), y: hi, mode: "lines", line: { width: 0 }, fill: "tonexty",
           fillcolor: "rgba(148,163,184,0.18)", name: "95% CI", hoverinfo: "skip",
         },
-        { x: frequency, y: delta, mode: "lines", name: "Δ", line: { color: SIGNAL, width: 2 } },
+        { x: toGHz(frequency), y: delta, mode: "lines", name: "Δ", line: { color: SIGNAL, width: 2 } },
         {
-          x: sigX, y: sigY, mode: "markers", name: "significant",
+          x: toGHz(sigX), y: sigY, mode: "markers", name: "significant",
           marker: { color: ROSE, size: 6 },
         },
       ]}
       layout={{
         ...baseLayout,
-        xaxis: { title: { text: "frequency (Hz)" }, type: "log", gridcolor: GRID },
+        xaxis: freqAxis,
         yaxis: { title: { text: yTitle }, gridcolor: GRID, zeroline: true, zerolinecolor: "#475569" },
       }}
       config={config}

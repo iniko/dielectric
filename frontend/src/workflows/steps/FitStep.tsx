@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FitResultOut } from "../../types";
 import { Badge, Card, Field, Input, Stat } from "../../components/ui";
 import { BodePlot, ColeColePlot, ResidualPlot } from "../../components/Plots";
 import { usePreferences } from "../../preferences";
 import { useAnalysis } from "../AnalysisContext";
-import { ErrorMsg, Loading, Note, PanelLabel, StepIntro, useAsync } from "./common";
+import { ErrorMsg, Loading, Note, PanelLabel, StepIntro, useAsync, useDebounced } from "./common";
+
+// Unit of a fitted parameter by name prefix (tau_1, sigma_dc, …); "" = dimensionless.
+function paramUnit(name: string): string {
+  if (name === "tau" || name.startsWith("tau_")) return "s";
+  if (name.startsWith("sigma")) return "S/m";
+  return "";
+}
 
 const MODEL_OPTIONS = [
   "",
@@ -20,13 +27,20 @@ const MODEL_OPTIONS = [
 
 export default function FitStep() {
   const { fitReq, setFitReq, ensureFit, measurements, validations, temperature } = useAnalysis();
-  const key = JSON.stringify([
+  const polesValid = fitReq.poles.trim() === "" || /^[1-3]$/.test(fitReq.poles.trim());
+  const rawKey = JSON.stringify([
     fitReq,
     measurements.map((m) => m.id),
     validations.map((v) => v.id),
     temperature,
   ]);
-  const { data, loading, error } = useAsync(() => ensureFit(), [key]);
+  const debouncedKey = useDebounced(rawKey, 500);
+  // Advance the fetch key only once the inputs have settled AND are valid — the useAsync dep is
+  // always a real request key (never an "invalid" sentinel), so invalid input never fetches.
+  const fetchKeyRef = useRef(rawKey);
+  if (debouncedKey === rawKey && polesValid) fetchKeyRef.current = rawKey;
+  const { data, loading, error } = useAsync(() => ensureFit(), [fetchKeyRef.current]);
+  const stale = loading || error !== null;
 
   const selectCls =
     "w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-ink-850)] px-3 py-2 text-sm text-slate-100";
@@ -64,6 +78,9 @@ export default function FitStep() {
               value={fitReq.poles}
               onChange={(e) => setFitReq({ ...fitReq, poles: e.target.value })}
             />
+            {!polesValid && (
+              <p className="mt-1 text-xs text-amber-300">1–3, blank = auto — fit not updated.</p>
+            )}
           </Field>
           <Field label="DC conductivity term">
             <select
@@ -71,17 +88,25 @@ export default function FitStep() {
               onChange={(e) =>
                 setFitReq({ ...fitReq, dcSigma: e.target.value as "" | "on" | "off" })
               }
-              className={selectCls}
+              disabled={fitReq.model !== ""}
+              className={`${selectCls} disabled:opacity-40`}
             >
-              <option value="">model default</option>
+              <option value="">auto (no constraint)</option>
               <option value="on">include DC σ</option>
               <option value="off">exclude DC σ</option>
             </select>
+            {fitReq.model !== "" && (
+              <p className="mt-1 text-xs text-slate-500">
+                disabled — the forced family decides its own DC-σ term
+              </p>
+            )}
           </Field>
         </div>
         <Note>
-          An explicit model family overrides the DC-σ toggle. Add poles only when a one-pole fit leaves
-          visible residual structure — most saline/tissue spectra at 0.2–20 GHz need a single
+          These settings apply to <b>all loaded batches</b>. The DC-σ choice constrains
+          auto-selection to model families with (or without) a DC-conductivity term; it is disabled
+          when an explicit family is forced. Add poles only when a one-pole fit leaves visible
+          residual structure — most saline/tissue spectra at 0.2–20 GHz need a single
           (water-relaxation) pole.
         </Note>
       </Card>
@@ -89,7 +114,18 @@ export default function FitStep() {
       <div className="mt-6 space-y-6">
         {loading && <Loading what="Fitting candidate models…" />}
         {error && <ErrorMsg error={error} />}
-        {data?.results.map((r) => <FitPanel key={r.sample_id} r={r} />)}
+        {data && error && !loading && (
+          <div>
+            <Badge tone="caution">showing the last successful fit — the latest request failed</Badge>
+          </div>
+        )}
+        {data && (
+          <div className={stale ? "space-y-6 opacity-40 transition-opacity" : "space-y-6"}>
+            {data.results.map((r) => (
+              <FitPanel key={r.sample_id} r={r} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -144,8 +180,17 @@ function FitPanel({ r }: { r: FitResultOut }) {
         <ResidualPlot residual={r.residual} mode={lossMode} normalized={residNorm} />
         {residNorm && (
           <p className="mt-1 text-xs text-slate-500">
-            Standardized residuals (residual ÷ per-point Type A σ); a good weighted fit scatters within
-            the ±2σ band, and Σ(pull²) equals the reduced χ² shown above × dof.
+            Standardized residuals (residual ÷ per-point Type A standard uncertainty u); a good
+            weighted fit scatters within the ±2 band, and Σ(pull²) equals the reduced χ² shown
+            below × dof. Quoted parameter uncertainties assume the model describes the data within
+            u (they are not rescaled by χ²ᵣ).
+            {r.chi2_reduced > 5 && (
+              <span className="text-amber-300">
+                {" "}Here reduced χ² = {r.chi2_reduced.toPrecision(3)} ≫ 1 — the model misfit
+                exceeds the Type A uncertainty, so those uncertainties may be optimistic by ~√χ²ᵣ ≈{" "}
+                {Math.sqrt(r.chi2_reduced).toFixed(1)}×.
+              </span>
+            )}
           </p>
         )}
       </div>
@@ -158,15 +203,23 @@ function FitPanel({ r }: { r: FitResultOut }) {
       </div>
 
       <div className="mt-4">
-        <PanelLabel>Fitted parameters (value ± u)</PanelLabel>
+        <PanelLabel>Fitted parameters (value ± standard uncertainty, k = 1)</PanelLabel>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {r.params.map((p) => (
             <div
               key={p.name}
               className="rounded-md border border-[var(--color-line)] bg-[var(--color-ink-850)] px-3 py-2"
             >
-              <div className="text-xs text-slate-500">{p.name}</div>
-              <div className="tabular text-sm font-semibold text-slate-100">{p.formatted}</div>
+              <div className="text-xs text-slate-500">
+                {p.name}
+                {paramUnit(p.name) && <span className="text-slate-600"> ({paramUnit(p.name)})</span>}
+              </div>
+              <div className="tabular text-sm font-semibold text-slate-100">
+                {p.formatted}
+                {paramUnit(p.name) && (
+                  <span className="ml-1 font-normal text-slate-400">{paramUnit(p.name)}</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -178,7 +231,7 @@ function FitPanel({ r }: { r: FitResultOut }) {
           <table className="tabular w-full text-xs">
             <thead className="bg-[var(--color-ink-850)] text-slate-400">
               <tr>
-                {["model", "k", "χ²ᵣ", "AICc", "ΔAICc", "R²", ""].map((h) => (
+                {["model", "k", "χ²ᵣ", "AICc", "ΔAICc", "BIC", "R²", "flags"].map((h) => (
                   <th key={h} className="px-3 py-2 text-left font-medium">
                     {h}
                   </th>
@@ -193,12 +246,18 @@ function FitPanel({ r }: { r: FitResultOut }) {
                 >
                   <td className="px-3 py-1.5 text-slate-200">
                     {rf.chosen && <span className="mr-1 text-[var(--color-signal)]">▸</span>}
+                    {rf.recommended && !rf.chosen && (
+                      <span className="mr-1 text-slate-400" title="parsimony-aware auto-recommendation">
+                        ○
+                      </span>
+                    )}
                     {rf.label}
                   </td>
                   <td className="px-3 py-1.5">{rf.n_params}</td>
                   <td className="px-3 py-1.5">{rf.chi2_reduced.toPrecision(3)}</td>
                   <td className="px-3 py-1.5">{rf.aicc.toPrecision(4)}</td>
                   <td className="px-3 py-1.5">{rf.delta_aicc.toFixed(1)}</td>
+                  <td className="px-3 py-1.5">{rf.bic.toPrecision(4)}</td>
                   <td className="px-3 py-1.5">{rf.r_squared.toFixed(4)}</td>
                   <td className="px-3 py-1.5">
                     {rf.flag && (
@@ -210,6 +269,10 @@ function FitPanel({ r }: { r: FitResultOut }) {
             </tbody>
           </table>
         </div>
+        <p className="mt-1 text-xs text-slate-600">
+          ▸ chosen{r.ranking.some((rf) => rf.recommended && !rf.chosen) && " · ○ auto-recommendation"}
+          {" · "}AICc/BIC on N = 2·n_freq = {2 * r.residual.frequency_hz.length}; dof = N − k
+        </p>
         {r.selection_warnings.map((w, i) => (
           <p key={i} className="mt-2 text-xs text-amber-300">
             ⚠ {w}

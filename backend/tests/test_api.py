@@ -256,6 +256,52 @@ def test_fit_step_rejects_fixed_params() -> None:
     assert resp.status_code == 400
 
 
+def test_fit_dc_sigma_constrains_panel_not_forces_family() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    on = client.post(f"/api/campaigns/{cid}/fit", json={"dc_sigma": True}).json()["results"][0]
+    assert "DC σ" in on["chosen_model"]
+    assert not on["overridden"]  # a panel constraint, not an override
+    assert all("DC σ" in rf["label"] for rf in on["ranking"])
+    off = client.post(f"/api/campaigns/{cid}/fit", json={"dc_sigma": False}).json()["results"][0]
+    assert "DC σ" not in off["chosen_model"]
+    assert all("DC σ" not in rf["label"] for rf in off["ranking"])
+    assert any("constrained" in w for w in off["selection_warnings"])
+
+
+def test_fit_ranking_marks_recommended_and_chosen() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    res = client.post(f"/api/campaigns/{cid}/fit", json={"model": "Debye"}).json()["results"][0]
+    ranking = res["ranking"]
+    assert sum(rf["recommended"] for rf in ranking) == 1
+    chosen = next(rf for rf in ranking if rf["chosen"])
+    recommended = next(rf for rf in ranking if rf["recommended"])
+    assert chosen["label"] == "Debye"
+    assert recommended["label"] != "Debye"  # override ≠ recommendation, both visible
+
+
+def test_delete_set_forgets_it() -> None:
+    meas = _upload("h02s19m*.csv", "measurement", limit=4)
+    assert client.delete(f"/api/sets/{meas['id']}").status_code == 200
+    assert client.get(f"/api/sets/{meas['id']}/typea-summary").status_code == 404
+    assert client.delete(f"/api/sets/{meas['id']}").status_code == 404
+
+
+def test_fit_rejects_out_of_range_poles() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    for bad in (0, 7):
+        resp = client.post(f"/api/campaigns/{cid}/fit", json={"n_poles": bad})
+        assert resp.status_code == 422, (bad, resp.text)
+
+
+def test_fit_unknown_model_message_is_friendly() -> None:
+    cid, _m, _v = _campaign(with_validation=False)
+    resp = client.post(f"/api/campaigns/{cid}/fit", json={"model": "Nonexistent"})
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert "available:" in detail
+    assert "['" not in detail  # human-readable candidate list, not a Python repr
+
+
 def test_kk_step_exposes_predicted_and_measured() -> None:
     cid, _m, _v = _campaign(with_validation=False)
     body = client.get(f"/api/campaigns/{cid}/kk").json()

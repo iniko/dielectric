@@ -99,9 +99,14 @@ def methods_paragraph(
         margin = ""
         if runner is not None:
             d = runner.result.aicc - selection.chosen.result.aicc
+            # d < 0 means the alternative actually ranks better (an analyst override) — say
+            # "despite", never "preferred by" a negative margin.
             margin = (
                 f"; it was preferred over the next identifiable model "
                 f"({runner.label}) by ΔAICc = {d:.1f}"
+                if d >= 0
+                else f"; it was chosen despite ΔAICc = {-d:.1f} in favour of the next "
+                f"identifiable model ({runner.label})"
             )
         how = (
             "selected by minimum corrected-AIC (AICc) with a parsimony and identifiability check"

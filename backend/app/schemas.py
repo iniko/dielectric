@@ -49,7 +49,8 @@ class CampaignSummary(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     model: str | None = None  # force a model label
-    n_poles: int | None = None  # force the number of poles
+    n_poles: int | None = Field(default=None, ge=1, le=3)  # force the number of poles (1-3)
+    dc_sigma: bool | None = None  # constrain auto-selection to families with(out) a DC-σ term
 
 
 class ParamOut(BaseModel):
@@ -69,6 +70,7 @@ class RankedOut(BaseModel):
     r_squared: float
     flag: str  # "", "overparam", "degenerate"
     chosen: bool
+    recommended: bool = False  # the parsimony-aware automatic pick (≠ chosen after an override)
 
 
 class KKOut(BaseModel):
@@ -218,7 +220,7 @@ class RepeatsOut(BaseModel):
 
 class FitRequest(BaseModel):
     model: str | None = None  # force a candidate label
-    n_poles: int | None = None  # force the number of poles
+    n_poles: int | None = Field(default=None, ge=1, le=3)  # force the number of poles (1-3)
     dc_sigma: bool | None = None  # prefer a model family carrying a DC-σ term
     fixed_params: dict[str, float] = Field(default_factory=dict)  # name -> fixed value
 

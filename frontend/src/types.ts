@@ -36,6 +36,7 @@ export interface RankedOut {
   r_squared: number;
   flag: "" | "overparam" | "degenerate";
   chosen: boolean;
+  recommended: boolean; // the parsimony-aware automatic pick (≠ chosen after an override)
 }
 
 export interface KKOut {

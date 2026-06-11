@@ -119,7 +119,33 @@ with sync_playwright() as p:
     obs.append(("raw residual view selectable", page.locator(".js-plotly-plot").count() >= 1))
     obs.append(("chosen model badge Cole-Cole + DC",
                 page.locator("span", has_text="Cole-Cole + DC").count() >= 1))
+    obs.append(("ranking shows BIC and flags columns",
+                page.locator("th", has_text="BIC").count() >= 1
+                and page.locator("th", has_text="flags").count() >= 1))
+    obs.append(("N and dof disclosed", page.locator("text=/N = 2·n_freq = \\d+/").count() >= 1))
+    obs.append(("global scope disclosed", page.locator("text=all loaded batches").count() >= 1))
+    obs.append(("params k=1 statement",
+                page.locator("text=standard uncertainty, k = 1").count() >= 1))
     page.screenshot(path="/tmp/diel_step3_fit.png", full_page=True)
+
+    # poles lifecycle: out-of-range value → inline message, NO refit fired (badge unchanged)
+    poles = page.get_by_placeholder("auto")
+    poles.fill("7")
+    page.wait_for_selector("text=1–3, blank = auto", timeout=5000)
+    obs.append(("invalid poles message", page.locator("text=1–3, blank = auto").count() >= 1))
+    page.wait_for_timeout(1200)  # > debounce — nothing should have fired
+    obs.append(("invalid poles fires no refit",
+                page.locator("text=Fitting candidate models").count() == 0
+                and page.locator("span", has_text="Cole-Cole + DC").count() >= 1))
+    # valid override → debounced refit lands with MultiPole(N=2)
+    poles.fill("2")
+    page.wait_for_selector('span:has-text("MultiPole(N=2)")', timeout=90000)
+    obs.append(("poles=2 forces MultiPole(N=2)",
+                page.locator("span", has_text="MultiPole(N=2)").count() >= 1))
+    # restore the default auto state for the downstream steps
+    poles.fill("")
+    page.wait_for_selector('span:has-text("Cole-Cole + DC")', timeout=90000)
+    page.wait_for_timeout(1000)
 
     # (6) step 4: Kramers-Kronig
     step(page, "Kramers-Kronig", wait_selector="text=KK-predicted vs measured")

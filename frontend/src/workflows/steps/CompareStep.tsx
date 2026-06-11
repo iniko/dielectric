@@ -35,7 +35,7 @@ export default function CompareStep() {
 
   return (
     <div>
-      <StepIntro title="8 · Compare batches">
+      <StepIntro title="7 · Compare batches">
         Overlay the loaded batches and test whether they differ — the "normal vs diseased" question.
         Differences are computed against a baseline batch: per-frequency Δε′ and Δσ with a 95%-CI
         significance band, and z-scores on robust derived parameters (ε_s, ε∞, dominant τ, σ_DC). This

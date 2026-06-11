@@ -161,6 +161,15 @@ def list_sets() -> list[schemas.SetSummary]:
     return services.list_sets()
 
 
+@app.delete("/api/sets/{set_id}")
+def delete_set(set_id: str) -> dict[str, bool]:
+    try:
+        services.delete_set(set_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"deleted": True}
+
+
 @app.get("/api/sets/{set_id}/typea-summary", response_model=schemas.TypeASummaryOut)
 def typea_summary(set_id: str) -> schemas.TypeASummaryOut:
     try:

@@ -11,11 +11,19 @@ export interface FitReq {
   dcSigma: "" | "on" | "off"; // "" = let the model choice decide
 }
 
-export function resolveModel(r: FitReq): string | null {
-  if (r.model) return r.model;
-  if (r.dcSigma === "on") return "Cole-Cole + DC σ";
-  if (r.dcSigma === "off") return "Cole-Cole";
-  return null;
+// The wire shape of the customize controls. The DC-σ toggle is NOT a forced family — it
+// constrains the backend's auto-selection panel to families with(out) a DC term, and is
+// ignored (greyed out in the UI) when an explicit family is forced.
+export function toFitBody(r: FitReq): {
+  model: string | null;
+  n_poles: number | null;
+  dc_sigma: boolean | null;
+} {
+  return {
+    model: r.model || null,
+    n_poles: r.poles ? Number(r.poles) : null,
+    dc_sigma: r.model || r.dcSigma === "" ? null : r.dcSigma === "on",
+  };
 }
 
 interface AnalysisState {
@@ -71,6 +79,8 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   const removeSet = useCallback((role: "measurement" | "validation", id: string) => {
     if (role === "measurement") setMeasurements((x) => x.filter((m) => m.id !== id));
     else setValidations((x) => x.filter((v) => v.id !== id));
+    // Also forget it server-side, so the name doesn't feed batch-name disambiguation forever.
+    void api.deleteSet(id).catch(() => undefined);
   }, []);
 
   const attachValidation = useCallback((v: SetSummary, batchId: string) => {
@@ -109,8 +119,7 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     (cid: string) =>
       JSON.stringify([
         cid,
-        resolveModel(fitReq),
-        fitReq.poles ? Number(fitReq.poles) : null,
+        toFitBody(fitReq),
         screeningVersion, // screening change → new mean → refetch fit/analysis/compare
         validationVersion, // validation reference edit → refetch the banner/report
       ]),
@@ -121,10 +130,7 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     const cid = await ensureCampaign();
     const sig = reqSig(cid);
     if (fit && cache.current.fitSig === sig) return fit;
-    const res = await api.fitCampaign(cid, {
-      model: resolveModel(fitReq),
-      n_poles: fitReq.poles ? Number(fitReq.poles) : null,
-    });
+    const res = await api.fitCampaign(cid, toFitBody(fitReq));
     cache.current.fitSig = sig;
     setFit(res);
     return res;
@@ -135,10 +141,7 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
       const cid = await ensureCampaign();
       const sig = reqSig(cid);
       if (!force && analysis && cache.current.analysisSig === sig) return analysis;
-      const res = await api.analyze(cid, {
-        model: resolveModel(fitReq),
-        n_poles: fitReq.poles ? Number(fitReq.poles) : null,
-      });
+      const res = await api.analyze(cid, toFitBody(fitReq));
       cache.current.analysisSig = sig;
       setAnalysis(res);
       return res;

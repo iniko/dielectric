@@ -286,6 +286,7 @@ def _ranking_out(sel: ModelSelectionResult) -> list[schemas.RankedOut]:
             r_squared=rf.result.r_squared,
             flag=("overparam" if rf.overparameterized else "degenerate" if rf.degenerate else ""),
             chosen=rf.label == sel.chosen.label,
+            recommended=rf.label == sel.recommended.label,
         )
         for rf in sel.ranking
     ]
@@ -304,23 +305,11 @@ def _residual_series(fit: FitResult) -> schemas.ResidualSeries:
     )
 
 
-def _resolve_force_model(req: schemas.FitRequest) -> str | None:
-    """Constrained customization: explicit model wins; else the DC-σ toggle picks a family."""
-    if req.model:
-        return req.model
-    if req.dc_sigma is True:
-        return "Cole-Cole + DC σ"
-    if req.dc_sigma is False:
-        return "Cole-Cole"
-    return None
-
-
 def fit_campaign(campaign_id: str, req: schemas.FitRequest) -> schemas.FitOut:
     """Fit + select a model per measurement sample, cache the fit, return the fit step payload."""
     if req.fixed_params:
         raise ValueError("fixing individual parameters is not yet supported")
     campaign = STORE.campaigns[campaign_id]
-    force = _resolve_force_model(req)
     results: list[schemas.FitResultOut] = []
     cache: dict[str, dict[str, object]] = {}
     with warnings.catch_warnings():
@@ -328,7 +317,8 @@ def fit_campaign(campaign_id: str, req: schemas.FitRequest) -> schemas.FitOut:
         for ms in campaign.measurements:
             ta = _screened_type_a(ms)
             spectrum = ta.mean
-            sel = select_model(spectrum, force_model=force, n_poles=req.n_poles)
+            sel = select_model(spectrum, force_model=req.model or None, n_poles=req.n_poles,
+                               dc_sigma=req.dc_sigma)
             fit = sel.chosen.result
             band = (spectrum.band_hz[0] / 1e9, spectrum.band_hz[1] / 1e9)
             results.append(schemas.FitResultOut(
@@ -425,6 +415,21 @@ def _screening_info(ta: TypeAResult) -> schemas.ScreeningInfo:
         method=_SCREEN_METHOD,
         citation=_SCREEN_CITATION,
     )
+
+
+def delete_set(set_id: str) -> None:
+    """Forget an uploaded set so its name no longer feeds the batch-name disambiguation.
+
+    Existing campaigns hold the set objects directly, so analyses already built stay valid.
+    """
+    if set_id in STORE.measurement_sets:
+        del STORE.measurement_sets[set_id]
+    elif set_id in STORE.validation_sets:
+        del STORE.validation_sets[set_id]
+    else:
+        raise KeyError(f"unknown set id {set_id!r}")
+    STORE.screening.pop(set_id, None)
+    STORE.validation_config.pop(set_id, None)
 
 
 def list_sets() -> list[schemas.SetSummary]:
@@ -760,7 +765,8 @@ def analyze_campaign(campaign_id: str, req: schemas.AnalyzeRequest) -> schemas.C
         for ms in campaign.measurements:
             ta = _screened_type_a(ms)
             spectrum = ta.mean
-            sel = select_model(spectrum, force_model=req.model, n_poles=req.n_poles)
+            sel = select_model(spectrum, force_model=req.model, n_poles=req.n_poles,
+                               dc_sigma=req.dc_sigma)
             fit = sel.chosen.result
             kk = kramers_kronig_check(spectrum, model=fit.model)
             closest = find_closest_materials(spectrum, material_class="tissue",

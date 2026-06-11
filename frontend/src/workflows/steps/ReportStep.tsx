@@ -17,7 +17,7 @@ export default function ReportStep() {
 
   return (
     <div>
-      <StepIntro title="7 · Report">
+      <StepIntro title="8 · Report">
         A reproducible, paper-ready report: the methods paragraph (paste-ready), fit and selection
         tables, figures, references, and a reproducibility manifest. Download <b>one combined campaign
         report</b> (every batch's analysis + the comparison, when there are ≥2 batches), or each batch

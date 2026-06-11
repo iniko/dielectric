@@ -40,6 +40,10 @@ DEGENERACY_THRESHOLD = 1.0
 #: fit for a qualitatively worse one (e.g. a poor Jonscher fit when few repeats are averaged).
 R2_RECOMMEND_TOL = 0.01
 
+#: A weighted fit with reduced χ² above this is flagged: the model misfit exceeds the Type A
+#: uncertainty, so the unscaled parameter covariance is optimistic by roughly √χ²ᵣ.
+CHI2_MISFIT_WARN = 5.0
+
 #: Per-parameter scale used to regularize relative uncertainty so a legitimately-near-zero parameter
 #: (e.g. α→0 in the Debye limit) is not falsely flagged.
 _PARAM_SCALE: dict[str, float] = {
@@ -169,6 +173,7 @@ def select_model(
     candidates: dict[str, FitFn] | None = None,
     force_model: str | None = None,
     n_poles: int | None = None,
+    dc_sigma: bool | None = None,
     max_poles: int = 3,
 ) -> ModelSelectionResult:
     """Fit and rank candidate models; recommend one; honor an optional override.
@@ -180,12 +185,26 @@ def select_model(
     n_poles:
         Force an N-pole Cole-Cole (+DC σ) model — the "number of poles" override. Takes precedence
         over ``force_model``.
+    dc_sigma:
+        Constrain the candidate panel to families with (True) or without (False) a DC-conductivity
+        term, then auto-select within it. Ignored when ``force_model``/``n_poles`` pins a model.
     """
+    if n_poles is not None and not 1 <= n_poles <= max_poles:
+        raise ValueError(
+            f"n_poles must be between 1 and {max_poles} (got {n_poles}); "
+            "leave it unset for automatic selection"
+        )
     panel = dict(candidates or default_candidates(max_poles))
     if n_poles is not None and f"MultiPole(N={n_poles}) + DC σ" not in panel:
         panel[f"MultiPole(N={n_poles}) + DC σ"] = _multipole_fitter(n_poles)
 
     warns: list[str] = []
+    if dc_sigma is not None and force_model is None and n_poles is None:
+        panel = {k: v for k, v in panel.items() if ("DC σ" in k) == dc_sigma}
+        warns.append(
+            f"candidate panel constrained to models "
+            f"{'with' if dc_sigma else 'without'} a DC-σ term (user setting)."
+        )
     fitted: list[tuple[str, FitResult]] = []
     for label, fitfn in panel.items():
         try:
@@ -251,8 +270,8 @@ def select_model(
         match = next((rf for rf in ranking if rf.label == forced_label), None)
         if match is None:
             raise ValueError(
-                f"forced model '{forced_label}' is not among the candidates: "
-                f"{[rf.label for rf in ranking]}"
+                f"forced model '{forced_label}' is not among the candidates "
+                f"(available: {', '.join(rf.label for rf in ranking)})"
             )
         chosen = match
         overridden = True
@@ -263,6 +282,17 @@ def select_model(
             )
             warns.append(msg)
             warnings.warn(ModelSelectionWarning(msg), stacklevel=2)
+
+    # Goodness-of-fit disclosure: for a weighted fit, reduced χ² ≫ 1 means the model misfit
+    # exceeds the Type A uncertainty — the parameter covariance (which assumes model adequacy)
+    # is then optimistic by roughly √χ²ᵣ. Say so rather than quoting bare uncertainties.
+    chi2r = chosen.result.chi2_reduced
+    if chosen.result.weighted and chi2r > CHI2_MISFIT_WARN:
+        warns.append(
+            f"the chosen fit has reduced χ² = {chi2r:.1f} ≫ 1: the model does not describe the "
+            f"data within the Type A uncertainty, so the quoted parameter uncertainties (which "
+            f"assume model adequacy) may be optimistic by ~√χ²ᵣ ≈ {chi2r**0.5:.1f}×."
+        )
 
     return ModelSelectionResult(
         ranking=tuple(ranking),

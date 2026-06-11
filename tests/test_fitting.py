@@ -141,6 +141,54 @@ def test_override_unknown_label_raises() -> None:
         select_model(_h02_like(), force_model="Nonexistent")
 
 
+def test_unknown_label_error_lists_candidates() -> None:
+    with pytest.raises(ValueError) as exc:
+        select_model(_h02_like(), force_model="Nonexistent")
+    msg = str(exc.value)
+    assert "available: " in msg
+    assert "Cole-Cole" in msg
+    assert "['" not in msg  # human-readable list, not a Python repr
+
+
+def test_n_poles_out_of_range_raises() -> None:
+    for bad in (0, 7, -1):
+        with pytest.raises(ValueError, match="n_poles must be between"):
+            select_model(_h02_like(), n_poles=bad)
+
+
+def test_dc_sigma_constrains_candidate_panel() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with_dc = select_model(_h02_like(), dc_sigma=True)
+        without_dc = select_model(_h02_like(), dc_sigma=False)
+    assert all("DC σ" in rf.label for rf in with_dc.ranking)
+    assert "DC σ" in with_dc.chosen.label
+    assert not with_dc.overridden  # a panel constraint, not a forced model
+    assert all("DC σ" not in rf.label for rf in without_dc.ranking)
+    # the constraint is disclosed
+    assert any("constrained" in w for w in without_dc.warnings)
+
+
+def test_dc_sigma_ignored_when_family_forced() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sel = select_model(_h02_like(), force_model="Debye", dc_sigma=True)
+    assert sel.chosen.label == "Debye"
+    assert not any("constrained" in w for w in sel.warnings)
+
+
+def test_weighted_misfit_flags_chi2_and_optimistic_uncertainties() -> None:
+    # weighted data from a 1-pole + DC σ truth, forced into a plain Debye → gross misfit
+    s = _h02_like()
+    sem = np.full(F.size, 0.02) * (1 + 1j)
+    weighted = Spectrum(F, s.epsilon, sem=sem)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sel = select_model(weighted, force_model="Debye")
+    assert sel.chosen.result.chi2_reduced > 5
+    assert any("optimistic" in w for w in sel.warnings)
+
+
 def test_degenerate_fit_not_recommended() -> None:
     """A lower-AICc fit whose parameters are unidentifiable must not be recommended."""
     import warnings as _w

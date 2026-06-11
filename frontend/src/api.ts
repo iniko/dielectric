@@ -89,7 +89,7 @@ export async function createCampaign(body: {
 
 export async function analyze(
   campaignId: string,
-  body: { model?: string | null; n_poles?: number | null },
+  body: { model?: string | null; n_poles?: number | null; dc_sigma?: boolean | null },
 ): Promise<CampaignAnalysis> {
   return json(
     await apiFetch(`/api/campaigns/${campaignId}/analyze`, {
@@ -102,6 +102,10 @@ export async function analyze(
 
 export async function listSets(): Promise<SetSummary[]> {
   return json(await apiFetch("/api/sets"));
+}
+
+export async function deleteSet(setId: string): Promise<void> {
+  await apiFetch(`/api/sets/${setId}`, { method: "DELETE" });
 }
 
 export async function getTypeASummary(setId: string): Promise<TypeASummaryOut> {
